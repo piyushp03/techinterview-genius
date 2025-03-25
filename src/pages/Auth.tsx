@@ -1,20 +1,32 @@
 
-import { useState } from 'react';
-import { useNavigate } from 'react-router-dom';
+import { useState, useEffect } from 'react';
+import { useNavigate, useSearchParams } from 'react-router-dom';
 import { useAuth } from '@/context/AuthContext';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { Card, CardContent, CardDescription, CardFooter, CardHeader, CardTitle } from '@/components/ui/card';
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs';
 import { Label } from '@/components/ui/label';
+import { CheckCircle, Mail } from 'lucide-react';
 
 const Auth = () => {
   const { login, register, loginAsGuest, isLoading } = useAuth();
   const navigate = useNavigate();
+  const [searchParams] = useSearchParams();
   const [name, setName] = useState('');
   const [email, setEmail] = useState('');
   const [password, setPassword] = useState('');
   const [activeTab, setActiveTab] = useState<'login' | 'register'>('login');
+  
+  const pendingConfirmation = searchParams.get('pendingConfirmation') === 'true';
+  const confirmation = searchParams.get('confirmation') === 'true';
+
+  useEffect(() => {
+    // If user was redirected back after confirmation, show confirmation success
+    if (confirmation) {
+      navigate('/auth'); // Remove query param after processing
+    }
+  }, [confirmation, navigate]);
 
   const handleLogin = async (e: React.FormEvent) => {
     e.preventDefault();
@@ -41,6 +53,50 @@ const Auth = () => {
       console.error('Guest login error:', error);
     }
   };
+
+  if (pendingConfirmation) {
+    return (
+      <div className="min-h-screen flex items-center justify-center bg-background px-4">
+        <Card className="w-full max-w-md">
+          <CardHeader className="text-center">
+            <Mail className="mx-auto h-12 w-12 text-primary mb-4" />
+            <CardTitle>Check your email</CardTitle>
+            <CardDescription>
+              We've sent a confirmation link to your email address.
+              Please check your inbox and click the link to confirm your account.
+            </CardDescription>
+          </CardHeader>
+          <CardFooter className="flex justify-center">
+            <Button variant="outline" onClick={() => navigate('/auth')}>
+              Back to login
+            </Button>
+          </CardFooter>
+        </Card>
+      </div>
+    );
+  }
+
+  if (confirmation) {
+    return (
+      <div className="min-h-screen flex items-center justify-center bg-background px-4">
+        <Card className="w-full max-w-md">
+          <CardHeader className="text-center">
+            <CheckCircle className="mx-auto h-12 w-12 text-green-500 mb-4" />
+            <CardTitle>Account Confirmed!</CardTitle>
+            <CardDescription>
+              Your account has been successfully confirmed.
+              You can now log in with your credentials.
+            </CardDescription>
+          </CardHeader>
+          <CardFooter className="flex justify-center">
+            <Button onClick={() => navigate('/auth')}>
+              Continue to Login
+            </Button>
+          </CardFooter>
+        </Card>
+      </div>
+    );
+  }
 
   return (
     <div className="min-h-screen flex items-center justify-center bg-background px-4">

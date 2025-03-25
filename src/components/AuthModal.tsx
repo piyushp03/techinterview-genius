@@ -1,5 +1,6 @@
 
 import { useState } from 'react';
+import { useNavigate } from 'react-router-dom';
 import { X } from 'lucide-react';
 import { useAuth } from '@/context/AuthContext';
 import { Button } from '@/components/ui/button';
@@ -17,6 +18,7 @@ const AuthModal = ({ isOpen, onClose }: AuthModalProps) => {
   const [password, setPassword] = useState('');
   const [isLoading, setIsLoading] = useState(false);
   const { login, register, loginAsGuest } = useAuth();
+  const navigate = useNavigate();
 
   if (!isOpen) return null;
 
@@ -27,10 +29,11 @@ const AuthModal = ({ isOpen, onClose }: AuthModalProps) => {
     try {
       if (mode === 'login') {
         await login(email, password);
+        onClose();
       } else {
         await register(name, email, password);
+        // Don't close the modal, the auth context will navigate to confirmation page
       }
-      onClose();
     } catch (error) {
       console.error('Authentication error:', error);
     } finally {

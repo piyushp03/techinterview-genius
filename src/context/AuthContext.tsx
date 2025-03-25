@@ -29,6 +29,7 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
     // Set up auth state listener FIRST
     const { data: { subscription } } = supabase.auth.onAuthStateChange(
       (event, session) => {
+        console.log('Auth state changed:', event, session);
         setSession(session);
         setUser(session?.user ?? null);
         setIsAuthenticated(!!session);
@@ -80,6 +81,7 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
           data: {
             name,
           },
+          emailRedirectTo: `${window.location.origin}/auth?confirmation=true`,
         },
       });
       
@@ -87,8 +89,8 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
         throw error;
       }
       
-      toast.success('Account created successfully. Please verify your email.');
-      navigate('/auth');
+      toast.success('Account created successfully. Please check your email for confirmation link.');
+      navigate('/auth?pendingConfirmation=true');
     } catch (error: any) {
       console.error('Registration failed:', error);
       toast.error(error.message || 'Registration failed. Please try again.');
