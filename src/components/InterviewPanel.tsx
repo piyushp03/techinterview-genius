@@ -1,27 +1,33 @@
 
 import { useState, useRef, useEffect } from 'react';
 import { Mic, MicOff, Send, User, PauseCircle, FileText, RotateCcw, Maximize, Minimize } from 'lucide-react';
-import { useInterview, InterviewMessage } from '@/context/InterviewContext';
 import { Button } from '@/components/ui/button';
 import useSpeechRecognition from '@/hooks/useSpeechRecognition';
 
 interface InterviewPanelProps {
   isFullScreen: boolean;
   toggleFullScreen: () => void;
+  messages: any[];
+  onSendMessage: (message: string) => void;
+  isProcessing: boolean;
+  input: string;
+  setInput: (value: string) => void;
+  isCompleted?: boolean;
 }
 
-const InterviewPanel = ({ isFullScreen, toggleFullScreen }: InterviewPanelProps) => {
-  const [message, setMessage] = useState('');
+const InterviewPanel = ({ 
+  isFullScreen, 
+  toggleFullScreen, 
+  messages, 
+  onSendMessage, 
+  isProcessing, 
+  input, 
+  setInput,
+  isCompleted = false
+}: InterviewPanelProps) => {
   const messagesEndRef = useRef<HTMLDivElement>(null);
   const messageInputRef = useRef<HTMLTextAreaElement>(null);
-  const { 
-    session, 
-    isActive, 
-    isSpeaking, 
-    isProcessing, 
-    sendMessage,
-    toggleSpeaking 
-  } = useInterview();
+  const [isSpeaking, setIsSpeaking] = useState(false);
   
   const { 
     transcript, 
@@ -32,7 +38,7 @@ const InterviewPanel = ({ isFullScreen, toggleFullScreen }: InterviewPanelProps)
     browserSupportsSpeechRecognition 
   } = useSpeechRecognition({
     onResult: (transcript) => {
-      setMessage(transcript);
+      setInput(transcript);
     },
   });
 
@@ -40,17 +46,16 @@ const InterviewPanel = ({ isFullScreen, toggleFullScreen }: InterviewPanelProps)
     if (messagesEndRef.current) {
       messagesEndRef.current.scrollIntoView({ behavior: 'smooth' });
     }
-  }, [session.messages]);
+  }, [messages]);
 
   const handleSendMessage = async () => {
-    if (!message.trim() || isProcessing) return;
+    if (!input.trim() || isProcessing) return;
     
     if (listening) {
       stopListening();
     }
     
-    await sendMessage(message);
-    setMessage('');
+    await onSendMessage(input);
     resetTranscript();
     
     if (messageInputRef.current) {
@@ -73,9 +78,13 @@ const InterviewPanel = ({ isFullScreen, toggleFullScreen }: InterviewPanelProps)
     }
   };
 
-  const renderChatBubble = (msg: InterviewMessage, index: number) => {
-    const isUser = msg.role === 'user';
-    const isLastMessage = index === session.messages.length - 1;
+  const toggleSpeaking = () => {
+    setIsSpeaking(!isSpeaking);
+  };
+
+  const renderChatBubble = (msg: any, index: number) => {
+    const isUser = !msg.is_bot;
+    const isLastMessage = index === messages.length - 1;
     
     return (
       <div
@@ -109,13 +118,13 @@ const InterviewPanel = ({ isFullScreen, toggleFullScreen }: InterviewPanelProps)
     );
   };
 
-  if (!isActive) {
+  if (messages.length === 0) {
     return (
       <div className="h-full flex items-center justify-center">
         <div className="text-center p-8">
-          <h3 className="text-xl font-medium mb-2">Start an Interview Session</h3>
+          <h3 className="text-xl font-medium mb-2">Loading interview session...</h3>
           <p className="text-muted-foreground mb-4">
-            Configure your interview settings and click "Start Interview" to begin.
+            Your interview questions are being prepared.
           </p>
         </div>
       </div>
@@ -123,7 +132,7 @@ const InterviewPanel = ({ isFullScreen, toggleFullScreen }: InterviewPanelProps)
   }
 
   return (
-    <div className="flex flex-col h-full glass-card overflow-hidden">
+    <div className="flex flex-col h-full glass-card overflow-hidden w-full">
       <div className="flex justify-between items-center p-4 border-b">
         <h3 className="font-medium">AI Interview Session</h3>
         <div className="flex space-x-2">
@@ -155,13 +164,7 @@ const InterviewPanel = ({ isFullScreen, toggleFullScreen }: InterviewPanelProps)
       </div>
       
       <div className="flex-1 overflow-y-auto p-4">
-        {session.messages.length === 0 ? (
-          <div className="h-full flex items-center justify-center text-center text-muted-foreground">
-            <p>Your interview will begin momentarily...</p>
-          </div>
-        ) : (
-          session.messages.map((msg, index) => renderChatBubble(msg, index))
-        )}
+        {messages.map((msg, index) => renderChatBubble(msg, index))}
         <div ref={messagesEndRef} />
       </div>
       
@@ -169,23 +172,23 @@ const InterviewPanel = ({ isFullScreen, toggleFullScreen }: InterviewPanelProps)
         <div className="relative">
           <textarea
             ref={messageInputRef}
-            value={message}
-            onChange={(e) => setMessage(e.target.value)}
+            value={input}
+            onChange={(e) => setInput(e.target.value)}
             onKeyDown={handleKeyDown}
-            placeholder="Type your answer..."
+            placeholder={isCompleted ? "This interview is completed" : "Type your answer..."}
             className="w-full px-4 py-3 pr-24 resize-none border rounded-lg focus:outline-none focus:ring-2 focus:ring-primary/50 min-h-[80px] max-h-40"
             rows={2}
-            disabled={isProcessing}
+            disabled={isProcessing || isCompleted}
           />
           <div className="absolute right-2 bottom-2 flex">
-            {browserSupportsSpeechRecognition && (
+            {browserSupportsSpeechRecognition && !isCompleted && (
               <Button
                 type="button"
                 variant="ghost"
                 size="icon"
                 onClick={toggleListening}
                 className={`mr-1 ${listening ? 'text-primary' : ''}`}
-                disabled={isProcessing}
+                disabled={isProcessing || isCompleted}
               >
                 {listening ? (
                   <MicOff className="h-5 w-5" />
@@ -197,7 +200,7 @@ const InterviewPanel = ({ isFullScreen, toggleFullScreen }: InterviewPanelProps)
             <Button
               type="button"
               onClick={handleSendMessage}
-              disabled={!message.trim() || isProcessing}
+              disabled={!input.trim() || isProcessing || isCompleted}
               size="icon"
               className="bg-primary text-primary-foreground hover:bg-primary/90"
             >

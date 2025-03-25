@@ -9,6 +9,167 @@ export type Json =
 export type Database = {
   public: {
     Tables: {
+      custom_interview_templates: {
+        Row: {
+          category: string
+          created_at: string
+          description: string | null
+          id: string
+          is_coding_enabled: boolean
+          language: string
+          questions_limit: number
+          questions_type: string
+          role_type: string
+          time_limit: number
+          title: string
+          updated_at: string
+          user_id: string
+        }
+        Insert: {
+          category: string
+          created_at?: string
+          description?: string | null
+          id?: string
+          is_coding_enabled?: boolean
+          language: string
+          questions_limit?: number
+          questions_type: string
+          role_type: string
+          time_limit?: number
+          title: string
+          updated_at?: string
+          user_id: string
+        }
+        Update: {
+          category?: string
+          created_at?: string
+          description?: string | null
+          id?: string
+          is_coding_enabled?: boolean
+          language?: string
+          questions_limit?: number
+          questions_type?: string
+          role_type?: string
+          time_limit?: number
+          title?: string
+          updated_at?: string
+          user_id?: string
+        }
+        Relationships: []
+      }
+      custom_questions: {
+        Row: {
+          answer: string
+          category: string | null
+          created_at: string
+          id: string
+          question: string
+          user_id: string
+        }
+        Insert: {
+          answer: string
+          category?: string | null
+          created_at?: string
+          id?: string
+          question: string
+          user_id: string
+        }
+        Update: {
+          answer?: string
+          category?: string | null
+          created_at?: string
+          id?: string
+          question?: string
+          user_id?: string
+        }
+        Relationships: []
+      }
+      interview_messages: {
+        Row: {
+          content: string
+          created_at: string
+          id: string
+          is_bot: boolean
+          session_id: string
+        }
+        Insert: {
+          content: string
+          created_at?: string
+          id?: string
+          is_bot?: boolean
+          session_id: string
+        }
+        Update: {
+          content?: string
+          created_at?: string
+          id?: string
+          is_bot?: boolean
+          session_id?: string
+        }
+        Relationships: [
+          {
+            foreignKeyName: "interview_messages_session_id_fkey"
+            columns: ["session_id"]
+            isOneToOne: false
+            referencedRelation: "interview_sessions"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
+      interview_sessions: {
+        Row: {
+          category: string
+          created_at: string
+          current_question_count: number | null
+          end_time: string | null
+          id: string
+          is_coding_enabled: boolean | null
+          language: string
+          questions_limit: number | null
+          questions_type: string | null
+          resume_data: Json | null
+          role_type: string
+          start_time: string | null
+          time_limit: number | null
+          updated_at: string
+          user_id: string
+        }
+        Insert: {
+          category: string
+          created_at?: string
+          current_question_count?: number | null
+          end_time?: string | null
+          id?: string
+          is_coding_enabled?: boolean | null
+          language: string
+          questions_limit?: number | null
+          questions_type?: string | null
+          resume_data?: Json | null
+          role_type: string
+          start_time?: string | null
+          time_limit?: number | null
+          updated_at?: string
+          user_id: string
+        }
+        Update: {
+          category?: string
+          created_at?: string
+          current_question_count?: number | null
+          end_time?: string | null
+          id?: string
+          is_coding_enabled?: boolean | null
+          language?: string
+          questions_limit?: number | null
+          questions_type?: string | null
+          resume_data?: Json | null
+          role_type?: string
+          start_time?: string | null
+          time_limit?: number | null
+          updated_at?: string
+          user_id?: string
+        }
+        Relationships: []
+      }
       users: {
         Row: {
           avatar_url: string | null

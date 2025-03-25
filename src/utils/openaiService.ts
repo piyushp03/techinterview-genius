@@ -76,14 +76,25 @@ export async function generateInterviewQuestion(
   role: string,
   category: string,
   previousQuestions: string[] = [],
-  resumeText?: string,
-  customTopics?: string[]
+  resumeText?: string | any,
+  customTopics?: string[],
+  questionType: 'objective' | 'subjective' | 'mixed' = 'mixed',
+  isCodingEnabled: boolean = false
 ): Promise<string> {
   const systemPrompt = `You are an experienced technical interviewer conducting an interview for a ${role} role. 
   Focus on ${category} questions that are challenging but fair. 
   ${resumeText ? 'Consider the candidate\'s background from their resume.' : ''}
   ${customTopics?.length ? 'Focus on these specific topics: ' + customTopics.join(', ') : ''}
-  Ask one clear, specific question at a time. Don't provide answers.`;
+  ${isCodingEnabled ? 'Include coding challenges that can be solved in a web-based editor.' : 'Do not include coding challenges that require an editor.'}
+  
+  Question format: ${questionType === 'objective' 
+    ? 'Create multiple-choice questions with 4 options and clearly mark the correct answer.' 
+    : questionType === 'subjective'
+      ? 'Ask open-ended questions that require detailed explanations.'
+      : 'Mix both multiple-choice and open-ended questions.'
+  }
+  
+  Ask one clear, specific question at a time. Follow up on previous answers to create a coherent interview flow.`;
 
   const messages: ChatMessage[] = [
     { role: 'system', content: systemPrompt },
@@ -92,7 +103,7 @@ export async function generateInterviewQuestion(
   if (resumeText) {
     messages.push({
       role: 'user',
-      content: `Here is the candidate's resume: ${resumeText}`,
+      content: `Here is the candidate's resume: ${typeof resumeText === 'string' ? resumeText : JSON.stringify(resumeText)}`,
     });
     messages.push({
       role: 'assistant',
@@ -103,18 +114,124 @@ export async function generateInterviewQuestion(
   if (previousQuestions.length > 0) {
     messages.push({
       role: 'user',
-      content: `Previous questions asked: ${previousQuestions.join(' | ')}`,
+      content: `Previous questions and answers in this interview: ${previousQuestions.join(' | ')}`,
     });
   }
 
   messages.push({
     role: 'user',
-    content: `Generate a challenging ${category} interview question for a ${role} role.`,
+    content: `Generate a challenging ${category} interview question for a ${role} role. ${questionType === 'objective' ? 'Make it multiple choice with 4 options.' : questionType === 'subjective' ? 'Make it open-ended.' : ''}`,
   });
 
   return getChatCompletion(messages, {
     temperature: 0.8,
   });
+}
+
+/**
+ * Generate an objective multiple-choice question
+ */
+export async function generateObjectiveQuestion(
+  role: string,
+  category: string,
+  language: string
+): Promise<{
+  question: string;
+  options: string[];
+  correctAnswer: number;
+}> {
+  const systemPrompt = `Create a multiple-choice question for a ${role} interview focusing on ${category} in ${language}. 
+  The question should have exactly 4 options with only one correct answer.
+  Structure your response in JSON format with fields:
+  - question: the question text
+  - options: array of 4 possible answers
+  - correctAnswer: index (0-3) of the correct option
+  
+  Your response should be VALID JSON only.`;
+
+  const messages: ChatMessage[] = [
+    { role: 'system', content: systemPrompt },
+    { role: 'user', content: `Generate a ${category} multiple-choice question for a ${role} position using ${language}.` },
+  ];
+
+  try {
+    const response = await getChatCompletion(messages, {
+      temperature: 0.7,
+    });
+    
+    // Parse the JSON response
+    const result = JSON.parse(response);
+    return {
+      question: result.question,
+      options: result.options,
+      correctAnswer: result.correctAnswer,
+    };
+  } catch (error) {
+    console.error('Error generating objective question:', error);
+    return {
+      question: `What is a common use case for ${language} in ${category}?`,
+      options: [
+        'Option A',
+        'Option B',
+        'Option C',
+        'Option D',
+      ],
+      correctAnswer: 0,
+    };
+  }
+}
+
+/**
+ * Generate a coding challenge question
+ */
+export async function generateCodingChallenge(
+  role: string,
+  language: string,
+  difficulty: 'easy' | 'medium' | 'hard' = 'medium'
+): Promise<{
+  question: string;
+  starterCode: string;
+  testCases: string;
+  solutionCode: string;
+}> {
+  const systemPrompt = `Create a coding challenge for a ${role} interview using ${language}. 
+  The difficulty should be ${difficulty}.
+  Structure your response in JSON format with fields:
+  - question: detailed problem statement
+  - starterCode: boilerplate code to get the candidate started
+  - testCases: example test cases to verify solution
+  - solutionCode: a working solution
+  
+  Your response should be VALID JSON only.`;
+
+  const messages: ChatMessage[] = [
+    { role: 'system', content: systemPrompt },
+    { role: 'user', content: `Generate a ${difficulty} coding challenge for a ${role} position using ${language}.` },
+  ];
+
+  try {
+    const response = await getChatCompletion(messages, {
+      temperature: 0.7,
+      max_tokens: 2000,
+    });
+    
+    // Parse the JSON response
+    const result = JSON.parse(response);
+    return {
+      question: result.question,
+      starterCode: result.starterCode,
+      testCases: result.testCases,
+      solutionCode: result.solutionCode,
+    };
+  } catch (error) {
+    console.error('Error generating coding challenge:', error);
+    return {
+      question: `Write a function that reverses a string in ${language}.`,
+      starterCode: `// Write your code here\nfunction reverseString(str) {\n  // Your code here\n}`,
+      testCases: `reverseString("hello") // should return "olleh"`,
+      solutionCode: `function reverseString(str) {\n  return str.split('').reverse().join('');\n}`,
+    };
+  }
 }
 
 /**
@@ -203,6 +320,76 @@ export async function evaluateAnswer(
     score,
     strengths,
     areas_for_improvement,
+  };
+}
+
+/**
+ * Evaluate a coding solution
+ */
+export async function evaluateCodingSolution(
+  question: string,
+  userCode: string,
+  language: string,
+  expectedSolution: string
+): Promise<{
+  isCorrect: boolean;
+  feedback: string;
+  optimizationTips: string[];
+}> {
+  const systemPrompt = `You are an expert coding interviewer. Evaluate the candidate's code solution for correctness, efficiency, and coding style.
+  Be specific in your feedback and suggest improvements.`;
+
+  const messages: ChatMessage[] = [
+    { role: 'system', content: systemPrompt },
+    {
+      role: 'user',
+      content: `
+Problem: ${question}
+
+Candidate's Solution (${language}):
+\`\`\`
+${userCode}
+\`\`\`
+
+Expected Solution:
+\`\`\`
+${expectedSolution}
+\`\`\`
+
+Evaluate if the solution is correct. Provide specific feedback and optimization tips.
+      `,
+    },
+  ];
+
+  const response = await getChatCompletion(messages, {
+    temperature: 0.5,
+    max_tokens: 1500,
+  });
+
+  // Determine if the solution is correct based on the AI's assessment
+  const isCorrect = response.toLowerCase().includes('correct') && !response.toLowerCase().includes('incorrect');
+  
+  // Extract optimization tips
+  const optimizationTips: string[] = [];
+  if (response.includes('Optimization tips:') || response.includes('Optimization Tips:')) {
+    const tipsSection = response.split(/Optimization [Tt]ips:/)[1];
+    const tipItems = tipsSection.split('\n').filter(item => item.trim().startsWith('-'));
+    tipItems.forEach(item => {
+      const cleaned = item.replace(/^-\s*/, '').trim();
+      if (cleaned) optimizationTips.push(cleaned);
+    });
+  }
+
+  if (optimizationTips.length === 0) {
+    // Default optimization tips if none were extracted
+    optimizationTips.push("Consider edge cases");
+    optimizationTips.push("Optimize for time and space complexity");
+  }
+
+  return {
+    isCorrect,
+    feedback: response,
+    optimizationTips,
   };
 }
 

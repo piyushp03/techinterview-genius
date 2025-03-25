@@ -52,6 +52,13 @@ export type Database = {
           language: string;
           category: string;
           resume_data: any | null;
+          questions_type: string;
+          time_limit: number;
+          questions_limit: number;
+          is_coding_enabled: boolean;
+          current_question_count: number;
+          start_time: string | null;
+          end_time: string | null;
           created_at: string;
           updated_at: string;
         };
@@ -75,6 +82,23 @@ export type Database = {
           created_at: string;
         };
       };
+      custom_interview_templates: {
+        Row: {
+          id: string;
+          user_id: string;
+          title: string;
+          description: string;
+          role_type: string;
+          language: string;
+          category: string;
+          questions_type: string;
+          time_limit: number;
+          questions_limit: number;
+          is_coding_enabled: boolean;
+          created_at: string;
+          updated_at: string;
+        };
+      };
     };
   };
 };
@@ -96,6 +120,13 @@ export type Tables = {
     language: string;
     category: string;
     resume_data: any | null;
+    questions_type: string;
+    time_limit: number;
+    questions_limit: number;
+    is_coding_enabled: boolean;
+    current_question_count: number;
+    start_time: string | null;
+    end_time: string | null;
     created_at: string;
     updated_at: string;
   };
@@ -113,5 +144,20 @@ export type Tables = {
     answer: string;
     category: string | null;
     created_at: string;
+  };
+  custom_interview_templates: {
+    id: string;
+    user_id: string;
+    title: string;
+    description: string;
+    role_type: string;
+    language: string;
+    category: string;
+    questions_type: string;
+    time_limit: number;
+    questions_limit: number;
+    is_coding_enabled: boolean;
+    created_at: string;
+    updated_at: string;
   };
 };
