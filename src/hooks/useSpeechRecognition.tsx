@@ -60,8 +60,14 @@ interface SpeechRecognitionErrorEvent extends Event {
   message: string;
 }
 
+// Add SpeechRecognition to the Window interface
+interface Window {
+  SpeechRecognition: typeof SpeechRecognition;
+  webkitSpeechRecognition: typeof SpeechRecognition;
+}
+
 // Ensure the SpeechRecognition class is available globally
-const SpeechRecognition = window.SpeechRecognition || (window as any).webkitSpeechRecognition;
+const SpeechRecognitionAPI = window.SpeechRecognition || (window as any).webkitSpeechRecognition;
 
 export const useSpeechRecognition = ({
   onResult,
@@ -74,7 +80,7 @@ export const useSpeechRecognition = ({
   const [listening, setListening] = useState(false);
   const recognitionRef = useRef<SpeechRecognition | null>(null);
 
-  const browserSupportsSpeechRecognition = !!SpeechRecognition;
+  const browserSupportsSpeechRecognition = !!SpeechRecognitionAPI;
 
   useEffect(() => {
     if (!browserSupportsSpeechRecognition) {
@@ -82,7 +88,7 @@ export const useSpeechRecognition = ({
       return;
     }
 
-    recognitionRef.current = new SpeechRecognition();
+    recognitionRef.current = new SpeechRecognitionAPI();
     recognitionRef.current.continuous = continuous;
     recognitionRef.current.interimResults = interimResults;
     recognitionRef.current.lang = lang;

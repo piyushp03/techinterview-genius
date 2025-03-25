@@ -1,4 +1,3 @@
-
 import { useState } from 'react';
 import { useAuth } from '@/context/AuthContext';
 import { useInterview } from '@/context/InterviewContext';
@@ -10,7 +9,7 @@ import ProfileSelector from '@/components/ProfileSelector';
 import ResumeUploader from '@/components/ResumeUploader';
 import AuthModal from '@/components/AuthModal';
 import { Button } from '@/components/ui/button';
-import { Bot, Cpu, Code, File, Columns, Brain, ChevronRight, Microphone, Settings } from 'lucide-react';
+import { Bot, Cpu, Code, File, Columns, Brain, ChevronRight, Mic, Settings } from 'lucide-react';
 
 const Index = () => {
   const { isAuthenticated, user } = useAuth();
@@ -123,7 +122,7 @@ const Index = () => {
                   </div>
                   
                   <div className="glass-card p-6 card-hover">
-                    <Microphone className="w-10 h-10 text-primary mb-4" />
+                    <Mic className="w-10 h-10 text-primary mb-4" />
                     <h3 className="text-xl font-medium mb-2">Speech Recognition</h3>
                     <p className="text-muted-foreground">
                       Speak your answers naturally with real-time speech-to-text technology.
