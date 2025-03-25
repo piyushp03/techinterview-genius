@@ -1,4 +1,3 @@
-
 import { useState, useRef } from 'react';
 import { FilePlus, FileText, X, Upload } from 'lucide-react';
 import { Button } from '@/components/ui/button';

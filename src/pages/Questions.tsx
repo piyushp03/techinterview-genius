@@ -1,4 +1,3 @@
-
 import { useState, useEffect } from 'react';
 import { useAuth } from '@/context/AuthContext';
 import { supabase } from '@/integrations/supabase/client';
@@ -118,7 +117,6 @@ const Questions = () => {
         toast.success('Question updated successfully');
       }
       
-      // Reset form and refetch
       handleCancel();
       fetchQuestions();
     } catch (error: any) {
@@ -143,7 +141,6 @@ const Questions = () => {
       toast.success('Question deleted successfully');
       fetchQuestions();
       
-      // If we were editing this question, clear the form
       if (editingId === id) {
         handleCancel();
       }
@@ -165,7 +162,6 @@ const Questions = () => {
           </Button>
         </div>
 
-        {/* Form for adding/editing questions */}
         {(isAddingNew || editingId) && (
           <Card className="mb-8">
             <CardHeader>
@@ -225,7 +221,6 @@ const Questions = () => {
           </Card>
         )}
 
-        {/* Questions list */}
         {loading ? (
           <div className="flex justify-center py-10">
             <div className="h-10 w-10 animate-spin rounded-full border-4 border-primary border-t-transparent"></div>

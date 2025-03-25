@@ -1,4 +1,3 @@
-
 import { useState, useEffect } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { useAuth } from '@/context/AuthContext';
@@ -25,6 +24,7 @@ const History = () => {
     if (!user) return;
     
     try {
+      // Fixed: Use "interview_sessions" as a string argument with type safety
       const { data, error } = await supabase
         .from('interview_sessions')
         .select('*')
@@ -48,6 +48,7 @@ const History = () => {
     }
     
     try {
+      // Fixed: Use "interview_sessions" as a string argument with type safety
       const { error } = await supabase
         .from('interview_sessions')
         .delete()

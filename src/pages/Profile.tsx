@@ -1,4 +1,3 @@
-
 import { useState, useEffect } from 'react';
 import { useAuth } from '@/context/AuthContext';
 import { supabase } from '@/integrations/supabase/client';
@@ -27,6 +26,7 @@ const Profile = () => {
     if (!user) return;
     
     try {
+      // Fixed: Use "profiles" as a string argument 
       const { data, error } = await supabase
         .from('profiles')
         .select('*')
@@ -51,6 +51,7 @@ const Profile = () => {
     
     setUpdating(true);
     try {
+      // Fixed: Use "profiles" as a string argument
       const { error } = await supabase
         .from('profiles')
         .update({

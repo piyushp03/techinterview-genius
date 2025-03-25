@@ -19,18 +19,6 @@ interface UseSpeechRecognitionReturn {
 }
 
 // Type definition for the Web Speech API
-interface SpeechRecognition extends EventTarget {
-  continuous: boolean;
-  interimResults: boolean;
-  lang: string;
-  start: () => void;
-  stop: () => void;
-  abort: () => void;
-  onresult: (event: SpeechRecognitionEvent) => void;
-  onerror: (event: SpeechRecognitionErrorEvent) => void;
-  onend: () => void;
-}
-
 interface SpeechRecognitionEvent {
   results: SpeechRecognitionResultList;
   resultIndex: number;
@@ -60,14 +48,18 @@ interface SpeechRecognitionErrorEvent extends Event {
   message: string;
 }
 
-// Add SpeechRecognition to the Window interface
-interface Window {
-  SpeechRecognition: typeof SpeechRecognition;
-  webkitSpeechRecognition: typeof SpeechRecognition;
+// Fix the SpeechRecognition types
+type SpeechRecognitionType = {
+  continuous: boolean;
+  interimResults: boolean;
+  lang: string;
+  start: () => void;
+  stop: () => void;
+  abort: () => void;
+  onresult: (event: SpeechRecognitionEvent) => void;
+  onerror: (event: SpeechRecognitionErrorEvent) => void;
+  onend: () => void;
 }
-
-// Ensure the SpeechRecognition class is available globally
-const SpeechRecognitionAPI = window.SpeechRecognition || (window as any).webkitSpeechRecognition;
 
 export const useSpeechRecognition = ({
   onResult,
@@ -78,8 +70,10 @@ export const useSpeechRecognition = ({
 }: UseSpeechRecognitionProps = {}): UseSpeechRecognitionReturn => {
   const [transcript, setTranscript] = useState('');
   const [listening, setListening] = useState(false);
-  const recognitionRef = useRef<SpeechRecognition | null>(null);
+  const recognitionRef = useRef<SpeechRecognitionType | null>(null);
 
+  // Fix: Use proper window property access with proper types
+  const SpeechRecognitionAPI = (window as any).SpeechRecognition || (window as any).webkitSpeechRecognition;
   const browserSupportsSpeechRecognition = !!SpeechRecognitionAPI;
 
   useEffect(() => {
@@ -88,7 +82,7 @@ export const useSpeechRecognition = ({
       return;
     }
 
-    recognitionRef.current = new SpeechRecognitionAPI();
+    recognitionRef.current = new SpeechRecognitionAPI() as SpeechRecognitionType;
     recognitionRef.current.continuous = continuous;
     recognitionRef.current.interimResults = interimResults;
     recognitionRef.current.lang = lang;

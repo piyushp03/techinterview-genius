@@ -1,4 +1,3 @@
-
 import { useState } from 'react';
 import { useAuth } from '@/context/AuthContext';
 import Navbar from '@/components/Navbar';
@@ -96,7 +95,7 @@ const Resume = () => {
                 </CardDescription>
               </CardHeader>
               <CardContent>
-                <ResumeUploader onTextExtracted={handleResumeUpload} />
+                <ResumeUploader onResumeProcessed={handleResumeUpload} />
               </CardContent>
             </Card>
           </div>

@@ -1,4 +1,3 @@
-
 import { useState } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { useAuth } from '@/context/AuthContext';
@@ -9,7 +8,7 @@ import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/com
 import { Button } from '@/components/ui/button';
 import { Label } from '@/components/ui/label';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
-import { CodeBracketSquare, Globe, Briefcase } from 'lucide-react';
+import { Code, Globe, Briefcase } from 'lucide-react';
 
 const NewInterview = () => {
   const { user } = useAuth();
@@ -63,7 +62,6 @@ const NewInterview = () => {
 
     setIsLoading(true);
     try {
-      // Create a new interview session in the database
       const { data, error } = await supabase
         .from('interview_sessions')
         .insert({
@@ -126,7 +124,7 @@ const NewInterview = () => {
           <Card>
             <CardHeader>
               <div className="flex items-center gap-3">
-                <CodeBracketSquare className="h-8 w-8 text-indigo-500" />
+                <Code className="h-8 w-8 text-indigo-500" />
                 <CardTitle>Programming Language</CardTitle>
               </div>
               <CardDescription>Select your preferred programming language</CardDescription>

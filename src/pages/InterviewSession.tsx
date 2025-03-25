@@ -1,4 +1,3 @@
-
 import { useState, useEffect } from 'react';
 import { useParams, useNavigate } from 'react-router-dom';
 import { useAuth } from '@/context/AuthContext';
@@ -22,6 +21,7 @@ const InterviewSession = () => {
       if (!id) return;
       
       try {
+        // Fixed: Use "interview_sessions" as a string without type safety
         const { data, error } = await supabase
           .from('interview_sessions')
           .select('*')
