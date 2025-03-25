@@ -1,15 +1,24 @@
 
 import { useState } from 'react';
-import { Menu, X, Github, Settings, User } from 'lucide-react';
+import { Link, useNavigate, useLocation } from 'react-router-dom';
+import { Menu, X, Github, User, History, MessageSquare, FileText, LayoutDashboard, LogOut } from 'lucide-react';
 import { useAuth } from '@/context/AuthContext';
 import ThemeToggle from '@/components/ThemeToggle';
-import AuthModal from '@/components/AuthModal';
 import { Button } from '@/components/ui/button';
+import { Avatar, AvatarFallback, AvatarImage } from '@/components/ui/avatar';
+import {
+  DropdownMenu,
+  DropdownMenuContent,
+  DropdownMenuItem,
+  DropdownMenuSeparator,
+  DropdownMenuTrigger,
+} from '@/components/ui/dropdown-menu';
 
 const Navbar = () => {
   const { user, isAuthenticated, logout } = useAuth();
   const [isMenuOpen, setIsMenuOpen] = useState(false);
-  const [isAuthModalOpen, setIsAuthModalOpen] = useState(false);
+  const navigate = useNavigate();
+  const location = useLocation();
 
   const toggleMenu = () => {
     setIsMenuOpen(!isMenuOpen);
@@ -19,63 +28,106 @@ const Navbar = () => {
     setIsMenuOpen(false);
   };
 
-  const openAuthModal = () => {
-    setIsAuthModalOpen(true);
+  const handleLogout = async () => {
+    await logout();
     closeMenu();
   };
 
-  const closeAuthModal = () => {
-    setIsAuthModalOpen(false);
+  const getInitials = (name?: string) => {
+    return name
+      ?.split(' ')
+      .map(n => n[0])
+      .join('')
+      .toUpperCase() || user?.email?.charAt(0).toUpperCase() || 'U';
   };
 
-  const handleLogout = () => {
-    logout();
-    closeMenu();
-  };
+  const navItems = [
+    { path: '/dashboard', label: 'Dashboard', icon: <LayoutDashboard className="h-5 w-5" /> },
+    { path: '/interview/new', label: 'New Interview', icon: <User className="h-5 w-5" /> },
+    { path: '/questions', label: 'Custom Questions', icon: <MessageSquare className="h-5 w-5" /> },
+    { path: '/resume', label: 'Resume Analysis', icon: <FileText className="h-5 w-5" /> },
+    { path: '/history', label: 'History', icon: <History className="h-5 w-5" /> },
+  ];
 
   return (
     <>
       <header className="sticky top-0 z-40 w-full backdrop-blur-lg bg-background/80 border-b">
         <div className="container flex h-16 items-center justify-between py-4">
           <div className="flex items-center gap-2">
-            <a href="/" className="flex items-center gap-2">
+            <Link to="/" className="flex items-center gap-2">
               <span className="text-xl font-semibold bg-gradient-to-r from-blue-600 to-blue-400 bg-clip-text text-transparent">
                 TechInterview.AI
               </span>
-            </a>
+            </Link>
           </div>
 
           {/* Desktop Navigation */}
           <nav className="hidden md:flex items-center gap-6">
-            <a href="#features" className="text-sm font-medium hover:text-primary transition-colors">
-              Features
-            </a>
-            <a href="#how-it-works" className="text-sm font-medium hover:text-primary transition-colors">
-              How It Works
-            </a>
-            <a href="https://github.com" target="_blank" rel="noopener noreferrer" className="text-sm font-medium hover:text-primary transition-colors">
+            {isAuthenticated && navItems.map((item) => (
+              <Link 
+                key={item.path} 
+                to={item.path} 
+                className={`text-sm font-medium hover:text-primary transition-colors flex items-center gap-1
+                  ${location.pathname === item.path ? 'text-primary' : ''}`}
+              >
+                {item.label}
+              </Link>
+            ))}
+            <Link 
+              to="https://github.com" 
+              target="_blank" 
+              rel="noopener noreferrer" 
+              className="text-sm font-medium hover:text-primary transition-colors"
+            >
               <Github className="h-5 w-5" />
-            </a>
+            </Link>
             <ThemeToggle />
             {isAuthenticated ? (
-              <div className="relative group">
-                <Button variant="ghost" className="gap-2">
-                  <User className="h-5 w-5" />
-                  <span className="text-sm">{user?.name || 'User'}</span>
-                </Button>
-                <div className="absolute right-0 mt-2 w-48 opacity-0 invisible group-hover:opacity-100 group-hover:visible transition-all duration-300 ease-in-out z-50">
-                  <div className="py-1 bg-popover border rounded-md shadow-lg">
-                    <button
-                      onClick={handleLogout}
-                      className="block w-full text-left px-4 py-2 text-sm hover:bg-accent"
-                    >
-                      Sign out
-                    </button>
+              <DropdownMenu>
+                <DropdownMenuTrigger asChild>
+                  <Button variant="ghost" className="relative h-10 w-10 rounded-full">
+                    <Avatar className="h-10 w-10">
+                      <AvatarImage src={user?.user_metadata?.avatar_url} alt={user?.user_metadata?.name} />
+                      <AvatarFallback>{getInitials(user?.user_metadata?.name)}</AvatarFallback>
+                    </Avatar>
+                  </Button>
+                </DropdownMenuTrigger>
+                <DropdownMenuContent align="end">
+                  <div className="flex items-center justify-start gap-2 p-2">
+                    <div className="flex flex-col space-y-1 leading-none">
+                      <p className="font-medium">
+                        {user?.user_metadata?.name || user?.email?.split('@')[0] || 'User'}
+                      </p>
+                      <p className="w-[200px] truncate text-sm text-muted-foreground">
+                        {user?.email}
+                      </p>
+                    </div>
                   </div>
-                </div>
-              </div>
+                  <DropdownMenuSeparator />
+                  <DropdownMenuItem asChild>
+                    <Link to="/profile" className="cursor-pointer flex w-full items-center">
+                      <User className="mr-2 h-4 w-4" />
+                      <span>Profile</span>
+                    </Link>
+                  </DropdownMenuItem>
+                  <DropdownMenuItem asChild>
+                    <Link to="/dashboard" className="cursor-pointer flex w-full items-center">
+                      <LayoutDashboard className="mr-2 h-4 w-4" />
+                      <span>Dashboard</span>
+                    </Link>
+                  </DropdownMenuItem>
+                  <DropdownMenuSeparator />
+                  <DropdownMenuItem
+                    className="cursor-pointer text-red-600 focus:text-red-600"
+                    onClick={handleLogout}
+                  >
+                    <LogOut className="mr-2 h-4 w-4" />
+                    <span>Log out</span>
+                  </DropdownMenuItem>
+                </DropdownMenuContent>
+              </DropdownMenu>
             ) : (
-              <Button onClick={openAuthModal} className="btn-primary">
+              <Button onClick={() => navigate('/auth')} className="btn-primary">
                 Sign In
               </Button>
             )}
@@ -100,22 +152,19 @@ const Navbar = () => {
       {isMenuOpen && (
         <div className="fixed inset-0 z-30 bg-background/95 backdrop-blur-sm pt-16 md:hidden animate-fade-in">
           <nav className="container flex flex-col gap-4 p-6">
-            <a
-              href="#features"
-              className="py-3 text-base font-medium hover:text-primary"
-              onClick={closeMenu}
-            >
-              Features
-            </a>
-            <a
-              href="#how-it-works"
-              className="py-3 text-base font-medium hover:text-primary"
-              onClick={closeMenu}
-            >
-              How It Works
-            </a>
-            <a
-              href="https://github.com"
+            {isAuthenticated && navItems.map((item) => (
+              <Link
+                key={item.path}
+                to={item.path}
+                className="py-3 text-base font-medium hover:text-primary flex items-center gap-2"
+                onClick={closeMenu}
+              >
+                {item.icon}
+                {item.label}
+              </Link>
+            ))}
+            <Link
+              to="https://github.com"
               className="py-3 text-base font-medium hover:text-primary flex items-center gap-2"
               target="_blank"
               rel="noopener noreferrer"
@@ -123,7 +172,7 @@ const Navbar = () => {
             >
               <Github className="h-5 w-5" />
               GitHub
-            </a>
+            </Link>
             <div className="py-3 flex items-center justify-between">
               <span className="text-base font-medium">Theme</span>
               <ThemeToggle />
@@ -131,20 +180,28 @@ const Navbar = () => {
             <div className="pt-4 mt-4 border-t">
               {isAuthenticated ? (
                 <>
-                  <div className="flex items-center gap-3 py-3">
+                  <Link
+                    to="/profile"
+                    className="py-3 text-base font-medium hover:text-primary flex items-center gap-2"
+                    onClick={closeMenu}
+                  >
                     <User className="h-5 w-5" />
-                    <span className="font-medium">{user?.name || 'User'}</span>
-                  </div>
+                    Profile
+                  </Link>
                   <button
                     onClick={handleLogout}
-                    className="w-full py-3 text-base font-medium text-red-500 hover:text-red-600 flex items-center"
+                    className="w-full py-3 text-base font-medium text-red-500 hover:text-red-600 flex items-center gap-2"
                   >
+                    <LogOut className="h-5 w-5" />
                     Sign out
                   </button>
                 </>
               ) : (
                 <Button
-                  onClick={openAuthModal}
+                  onClick={() => {
+                    navigate('/auth');
+                    closeMenu();
+                  }}
                   className="w-full btn-primary"
                 >
                   Sign In
@@ -154,8 +211,6 @@ const Navbar = () => {
           </nav>
         </div>
       )}
-
-      <AuthModal isOpen={isAuthModalOpen} onClose={closeAuthModal} />
     </>
   );
 };

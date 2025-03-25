@@ -1,67 +1,69 @@
 
 import React, { createContext, useContext, useState, useEffect } from 'react';
+import { User, Session } from '@supabase/supabase-js';
+import { useNavigate } from 'react-router-dom';
 import { toast } from 'sonner';
-
-type User = {
-  id: string;
-  name: string;
-  email: string;
-  role?: 'guest' | 'user' | 'premium';
-};
+import { supabase } from "@/integrations/supabase/client";
 
 type AuthContextType = {
   user: User | null;
+  session: Session | null;
   isLoading: boolean;
   isAuthenticated: boolean;
   login: (email: string, password: string) => Promise<void>;
   register: (name: string, email: string, password: string) => Promise<void>;
   loginAsGuest: () => void;
-  logout: () => void;
+  logout: () => Promise<void>;
 };
 
 const AuthContext = createContext<AuthContextType | undefined>(undefined);
 
 export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children }) => {
   const [user, setUser] = useState<User | null>(null);
+  const [session, setSession] = useState<Session | null>(null);
   const [isLoading, setIsLoading] = useState(true);
   const [isAuthenticated, setIsAuthenticated] = useState(false);
+  const navigate = useNavigate();
 
   useEffect(() => {
-    // Check if user is stored in localStorage
-    const storedUser = localStorage.getItem('user');
-    if (storedUser) {
-      try {
-        const parsedUser = JSON.parse(storedUser);
-        setUser(parsedUser);
-        setIsAuthenticated(true);
-      } catch (error) {
-        console.error('Failed to parse stored user:', error);
-        localStorage.removeItem('user');
+    // Set up auth state listener FIRST
+    const { data: { subscription } } = supabase.auth.onAuthStateChange(
+      (event, session) => {
+        setSession(session);
+        setUser(session?.user ?? null);
+        setIsAuthenticated(!!session);
+        setIsLoading(false);
       }
-    }
-    setIsLoading(false);
+    );
+
+    // THEN check for existing session
+    supabase.auth.getSession().then(({ data: { session } }) => {
+      setSession(session);
+      setUser(session?.user ?? null);
+      setIsAuthenticated(!!session);
+      setIsLoading(false);
+    });
+
+    return () => subscription.unsubscribe();
   }, []);
 
   const login = async (email: string, password: string) => {
     setIsLoading(true);
     try {
-      // Mock API call - would be replaced with actual authentication
-      await new Promise((resolve) => setTimeout(resolve, 1000));
-      
-      const mockUser = {
-        id: '123456',
-        name: email.split('@')[0],
+      const { error } = await supabase.auth.signInWithPassword({
         email,
-        role: 'user' as const,
-      };
+        password,
+      });
       
-      setUser(mockUser);
-      setIsAuthenticated(true);
-      localStorage.setItem('user', JSON.stringify(mockUser));
+      if (error) {
+        throw error;
+      }
+      
       toast.success('Logged in successfully');
-    } catch (error) {
+      navigate('/dashboard');
+    } catch (error: any) {
       console.error('Login failed:', error);
-      toast.error('Login failed. Please try again.');
+      toast.error(error.message || 'Login failed. Please try again.');
       throw error;
     } finally {
       setIsLoading(false);
@@ -71,23 +73,25 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
   const register = async (name: string, email: string, password: string) => {
     setIsLoading(true);
     try {
-      // Mock API call - would be replaced with actual registration
-      await new Promise((resolve) => setTimeout(resolve, 1000));
-      
-      const mockUser = {
-        id: '123456',
-        name,
+      const { error } = await supabase.auth.signUp({
         email,
-        role: 'user' as const,
-      };
+        password,
+        options: {
+          data: {
+            name,
+          },
+        },
+      });
       
-      setUser(mockUser);
-      setIsAuthenticated(true);
-      localStorage.setItem('user', JSON.stringify(mockUser));
-      toast.success('Account created successfully');
-    } catch (error) {
+      if (error) {
+        throw error;
+      }
+      
+      toast.success('Account created successfully. Please verify your email.');
+      navigate('/auth');
+    } catch (error: any) {
       console.error('Registration failed:', error);
-      toast.error('Registration failed. Please try again.');
+      toast.error(error.message || 'Registration failed. Please try again.');
       throw error;
     } finally {
       setIsLoading(false);
@@ -97,28 +101,42 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
   const loginAsGuest = () => {
     const guestUser = {
       id: `guest-${Date.now()}`,
-      name: 'Guest User',
       email: 'guest@example.com',
-      role: 'guest' as const,
-    };
+    } as User;
     
     setUser(guestUser);
     setIsAuthenticated(true);
-    localStorage.setItem('user', JSON.stringify(guestUser));
+    localStorage.setItem('guestUser', JSON.stringify(guestUser));
     toast.success('Logged in as guest');
+    navigate('/dashboard');
   };
 
-  const logout = () => {
-    setUser(null);
-    setIsAuthenticated(false);
-    localStorage.removeItem('user');
-    toast.success('Logged out successfully');
+  const logout = async () => {
+    try {
+      // For guest users, just clear local state
+      if (user?.email === 'guest@example.com') {
+        localStorage.removeItem('guestUser');
+        setUser(null);
+        setSession(null);
+        setIsAuthenticated(false);
+      } else {
+        // For real users, use Supabase sign out
+        await supabase.auth.signOut();
+      }
+      
+      toast.success('Logged out successfully');
+      navigate('/');
+    } catch (error) {
+      console.error('Logout failed:', error);
+      toast.error('Logout failed. Please try again.');
+    }
   };
 
   return (
     <AuthContext.Provider
       value={{
         user,
+        session,
         isLoading,
         isAuthenticated,
         login,
