@@ -16,6 +16,69 @@ export const supabase = createClient(SUPABASE_URL, SUPABASE_PUBLISHABLE_KEY, {
   }
 });
 
+// Define types for database schema
+export type Database = {
+  public: {
+    Tables: {
+      users: {
+        Row: {
+          id: string;
+          user_id: string;
+          email: string | null;
+          name: string | null;
+          full_name: string | null;
+          avatar_url: string | null;
+          token_identifier: string;
+          image: string | null;
+          created_at: string;
+          updated_at: string | null;
+        };
+      };
+      profiles: {
+        Row: {
+          id: string;
+          name: string | null;
+          avatar_url: string | null;
+          role: string | null;
+          created_at: string;
+          updated_at: string;
+        };
+      };
+      interview_sessions: {
+        Row: {
+          id: string;
+          user_id: string;
+          role_type: string;
+          language: string;
+          category: string;
+          resume_data: any | null;
+          created_at: string;
+          updated_at: string;
+        };
+      };
+      interview_messages: {
+        Row: {
+          id: string;
+          session_id: string;
+          is_bot: boolean;
+          content: string;
+          created_at: string;
+        };
+      };
+      custom_questions: {
+        Row: {
+          id: string;
+          user_id: string;
+          question: string;
+          answer: string;
+          category: string | null;
+          created_at: string;
+        };
+      };
+    };
+  };
+};
+
 // Define custom types for tables not in Database type
 export type Tables = {
   profiles: {

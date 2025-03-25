@@ -1,7 +1,7 @@
 
 import { toast } from 'sonner';
 
-// OpenAI API Key (would be better stored in backend environment)
+// OpenAI API Key (hardcoded for testing purposes only)
 const OPENAI_API_KEY = "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";
 
 // Types
@@ -144,28 +144,66 @@ export async function evaluateAnswer(
     },
   ];
 
-  try {
-    const response = await getChatCompletion(messages, {
-      temperature: 0.5,
-    });
+  const response = await getChatCompletion(messages, {
+    temperature: 0.5,
+  });
 
-    // For now, return a mock structured response
-    // In a real implementation, we would parse the response into a structured format
-    return {
-      feedback: response,
-      score: Math.floor(Math.random() * 5) + 5, // Mock score between 5-10
-      strengths: ["Clear explanation", "Good understanding of concepts"],
-      areas_for_improvement: ["Could provide more examples", "Consider edge cases"],
-    };
+  // Parse the response to extract score, strengths, and areas for improvement
+  let score = 5; // Default score
+  const strengths: string[] = [];
+  const areas_for_improvement: string[] = [];
+
+  try {
+    // Very basic parsing - in a real app, you'd use a more robust approach
+    if (response.includes('Score:')) {
+      const scoreMatch = response.match(/Score:\s*(\d+)/i);
+      if (scoreMatch && scoreMatch[1]) {
+        score = parseInt(scoreMatch[1], 10);
+        if (score < 1) score = 1;
+        if (score > 10) score = 10;
+      }
+    }
+
+    // Extract strengths
+    if (response.includes('Strengths:')) {
+      const strengthsSection = response.split('Strengths:')[1].split('Areas for improvement:')[0];
+      const strengthItems = strengthsSection.split('\n').filter(item => item.trim().startsWith('-'));
+      strengthItems.forEach(item => {
+        const cleaned = item.replace(/^-\s*/, '').trim();
+        if (cleaned) strengths.push(cleaned);
+      });
+    }
+
+    // Extract areas for improvement
+    if (response.includes('Areas for improvement:')) {
+      const improvementSection = response.split('Areas for improvement:')[1];
+      const improvementItems = improvementSection.split('\n').filter(item => item.trim().startsWith('-'));
+      improvementItems.forEach(item => {
+        const cleaned = item.replace(/^-\s*/, '').trim();
+        if (cleaned) areas_for_improvement.push(cleaned);
+      });
+    }
+
+    // If we couldn't parse any strengths or areas for improvement, create some defaults
+    if (strengths.length === 0) {
+      strengths.push("Clear explanation");
+      strengths.push("Good approach to the problem");
+    }
+
+    if (areas_for_improvement.length === 0) {
+      areas_for_improvement.push("Consider edge cases");
+      areas_for_improvement.push("Expand on technical details");
+    }
   } catch (error) {
-    console.error('Error evaluating answer:', error);
-    return {
-      feedback: "I couldn't properly evaluate this answer due to a technical issue.",
-      score: 5,
-      strengths: ["Answer received"],
-      areas_for_improvement: ["Please try again for a full evaluation"],
-    };
+    console.error('Error parsing AI response:', error);
   }
+
+  return {
+    feedback: response,
+    score,
+    strengths,
+    areas_for_improvement,
+  };
 }
 
 /**
