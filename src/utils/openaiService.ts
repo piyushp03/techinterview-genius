@@ -424,124 +424,14 @@ export function calculateSimilarity(expectedAnswer: string, providedAnswer: stri
 }
 
 /**
- * Analyze resume and provide feedback
+ * Extract text from resume PDF
  */
-export async function analyzeResume(resumeText: string): Promise<{
-  strengths: string[];
-  weaknesses: string[];
-  suggestions: string[];
-  jobFit: 'low' | 'medium' | 'high';
-  score: number;
-}> {
-  const systemPrompt = `You are an expert resume reviewer. Analyze the resume carefully and provide specific, actionable feedback.
-  Focus on content, structure, clarity, relevance, and impact.
-  Identify specific strengths and weaknesses.
-  Provide concrete suggestions for improvement.
-  Assess overall job readiness.`;
-
-  const messages: ChatMessage[] = [
-    { role: 'system', content: systemPrompt },
-    { role: 'user', content: `Here is the resume to analyze: ${resumeText}` },
-  ];
-
-  try {
-    const response = await getChatCompletion(messages, {
-      temperature: 0.5,
-      max_tokens: 1500,
-    });
-    
-    // Basic parsing of the AI response to extract structured information
-    const strengths: string[] = [];
-    const weaknesses: string[] = [];
-    const suggestions: string[] = [];
-    let score = 0;
-    let jobFit: 'low' | 'medium' | 'high' = 'medium';
-    
-    // Extract strengths
-    if (response.includes('Strengths:')) {
-      const strengthsSection = response.split('Strengths:')[1].split(/Weaknesses:|Areas for Improvement:/)[0];
-      const strengthItems = strengthsSection.split(/\n+/).filter(item => item.trim().startsWith('-'));
-      strengthItems.forEach(item => {
-        const cleaned = item.replace(/^-\s*/, '').trim();
-        if (cleaned) strengths.push(cleaned);
-      });
-    }
-    
-    // Extract weaknesses
-    const weaknessesRegex = /Weaknesses:|Areas for Improvement:|Areas to Improve:/;
-    if (response.match(weaknessesRegex)) {
-      const weaknessesSection = response.split(weaknessesRegex)[1].split(/Suggestions:|Recommendations:/)[0];
-      const weaknessItems = weaknessesSection.split(/\n+/).filter(item => item.trim().startsWith('-'));
-      weaknessItems.forEach(item => {
-        const cleaned = item.replace(/^-\s*/, '').trim();
-        if (cleaned) weaknesses.push(cleaned);
-      });
-    }
-    
-    // Extract suggestions
-    const suggestionsRegex = /Suggestions:|Recommendations:/;
-    if (response.match(suggestionsRegex)) {
-      const suggestionsSection = response.split(suggestionsRegex)[1].split(/Overall Assessment:|Score:|Job Fit:/)[0];
-      const suggestionItems = suggestionsSection.split(/\n+/).filter(item => item.trim().startsWith('-'));
-      suggestionItems.forEach(item => {
-        const cleaned = item.replace(/^-\s*/, '').trim();
-        if (cleaned) suggestions.push(cleaned);
-      });
-    }
-    
-    // Extract score
-    if (response.includes('Score:')) {
-      const scoreMatch = response.match(/Score:\s*(\d+)/i);
-      if (scoreMatch && scoreMatch[1]) {
-        score = parseInt(scoreMatch[1], 10);
-        if (score < 1) score = 1;
-        if (score > 100) score = 100;
-      }
-    }
-    
-    // Extract job fit
-    if (response.toLowerCase().includes('job fit:')) {
-      const jobFitLower = response.toLowerCase();
-      if (jobFitLower.includes('high') || jobFitLower.includes('strong') || jobFitLower.includes('excellent')) {
-        jobFit = 'high';
-      } else if (jobFitLower.includes('low') || jobFitLower.includes('poor') || jobFitLower.includes('weak')) {
-        jobFit = 'low';
-      } else {
-        jobFit = 'medium';
-      }
-    }
-    
-    // Default values if parsing failed
-    if (strengths.length === 0) strengths.push('Clear presentation of skills');
-    if (weaknesses.length === 0) weaknesses.push('Could be more concise');
-    if (suggestions.length === 0) suggestions.push('Add more quantifiable achievements');
-    if (score === 0) score = 70;
-    
-    return {
-      strengths,
-      weaknesses,
-      suggestions,
-      jobFit,
-      score
-    };
-  } catch (error) {
-    console.error('Error analyzing resume:', error);
-    return {
-      strengths: ['Clear presentation of skills', 'Good job history'],
-      weaknesses: ['Could be more concise', 'Some technical jargon may be unclear'],
-      suggestions: ['Add more metrics', 'Tailor to specific jobs'],
-      jobFit: 'medium',
-      score: 70
-    };
-  }
-}
-
 export const extractTextFromResume = async (pdfBase64: string) => {
   try {
     const response = await fetch('https://api.openai.com/v1/chat/completions', {
       method: 'POST',
       headers: {
-        'Authorization': `Bearer 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`,
+        'Authorization': `Bearer ${OPENAI_API_KEY}`,
         'Content-Type': 'application/json'
       },
       body: JSON.stringify({
@@ -583,12 +473,15 @@ export const extractTextFromResume = async (pdfBase64: string) => {
   }
 };
 
+/**
+ * Analyze resume and provide detailed feedback
+ */
 export const analyzeResume = async (resumeText: string) => {
   try {
     const response = await fetch('https://api.openai.com/v1/chat/completions', {
       method: 'POST',
       headers: {
-        'Authorization': `Bearer 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`,
+        'Authorization': `Bearer ${OPENAI_API_KEY}`,
         'Content-Type': 'application/json'
       },
       body: JSON.stringify({
@@ -621,9 +514,65 @@ export const analyzeResume = async (resumeText: string) => {
     }
 
     const data = await response.json();
-    return data.choices[0].message.content;
+    
+    // Parse the analysis to return a structured object
+    const analysisText = data.choices[0].message.content;
+    
+    // Extract key information from the analysis
+    const strengths: string[] = extractListSection(analysisText, 'Strengths:', 'Areas for improvement:') || ['Clear presentation of skills'];
+    const weaknesses: string[] = extractListSection(analysisText, 'Areas for improvement:', 'Suggested edits:') || ['Could be more concise'];
+    const suggestions: string[] = extractListSection(analysisText, 'Suggested edits:', 'Industry-specific advice:') || ['Add more quantifiable achievements'];
+    
+    // Extract score
+    let score = 70;
+    const scoreMatch = analysisText.match(/score[:\s]*(\d+)/i);
+    if (scoreMatch && scoreMatch[1]) {
+      score = parseInt(scoreMatch[1], 10);
+    }
+    
+    // Determine job fit
+    let jobFit: 'low' | 'medium' | 'high' = 'medium';
+    const lowTerms = ['poor', 'weak', 'inadequate', 'insufficient'];
+    const highTerms = ['excellent', 'outstanding', 'exceptional', 'impressive', 'strong'];
+    
+    const lowerCaseAnalysis = analysisText.toLowerCase();
+    if (lowTerms.some(term => lowerCaseAnalysis.includes(term))) {
+      jobFit = 'low';
+    } else if (highTerms.some(term => lowerCaseAnalysis.includes(term))) {
+      jobFit = 'high';
+    }
+    
+    return {
+      analysisText,
+      strengths,
+      weaknesses,
+      suggestions,
+      jobFit,
+      score
+    };
   } catch (error) {
     console.error('Error analyzing resume:', error);
     throw error;
   }
 };
+
+/**
+ * Helper function to extract list items from a section of text
+ */
+function extractListSection(text: string, startMarker: string, endMarker: string): string[] | null {
+  if (!text.includes(startMarker)) return null;
+  
+  const startIndex = text.indexOf(startMarker) + startMarker.length;
+  const endIndex = text.includes(endMarker) ? text.indexOf(endMarker) : text.length;
+  
+  if (startIndex >= endIndex) return null;
+  
+  const sectionText = text.substring(startIndex, endIndex).trim();
+  const items = sectionText.split(/\n+/)
+    .map(line => line.trim())
+    .filter(line => line.startsWith('-') || line.startsWith('•'))
+    .map(line => line.replace(/^[-•]\s*/, '').trim())
+    .filter(line => line.length > 0);
+  
+  return items.length > 0 ? items : null;
+}

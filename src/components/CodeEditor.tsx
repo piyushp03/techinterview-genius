@@ -1,6 +1,5 @@
 
 import React, { useState, useEffect } from 'react';
-import { basicSetup } from 'codemirror';
 import { EditorState } from '@codemirror/state';
 import { EditorView, keymap } from '@codemirror/view';
 import { indentWithTab } from '@codemirror/commands';
@@ -15,6 +14,7 @@ import { markdown } from '@codemirror/lang-markdown';
 import { rust } from '@codemirror/lang-rust';
 import { sql } from '@codemirror/lang-sql';
 import { xml } from '@codemirror/lang-xml';
+import { basicSetup } from 'codemirror';
 
 export interface CodeEditorProps {
   language?: string;
@@ -66,7 +66,7 @@ const CodeEditor: React.FC<CodeEditorProps> = ({
     return () => {
       view.destroy();
     };
-  }, [editorElement, language, readOnly, initialCode]);
+  }, [editorElement, language, readOnly, initialCode, onChange]);
 
   const getLanguageExtension = (lang: string) => {
     switch (lang.toLowerCase()) {

@@ -1,19 +1,14 @@
-
 import React, { useState, useEffect, useRef } from 'react';
-import { Mic, MicOff, X, Volume2, VolumeX, FileText, Save, Clock, User, Bot } from 'lucide-react';
 import { Button } from '@/components/ui/button';
-import { Slider } from '@/components/ui/slider';
-import { toast } from 'sonner';
-import { supabase } from '@/integrations/supabase/client';
-import { useNavigate } from 'react-router-dom';
-import { useAuth } from '@/context/AuthContext';
-import { Separator } from '@/components/ui/separator';
+import { Card, CardContent } from '@/components/ui/card';
+import { Mic, MicOff, Send, Volume2, VolumeX } from 'lucide-react';
+import { Textarea } from '@/components/ui/textarea';
+import { Avatar, AvatarFallback, AvatarImage } from '@/components/ui/avatar';
 import { ScrollArea } from '@/components/ui/scroll-area';
-
-interface VoiceInterviewerProps {
-  onClose: () => void;
-  duration?: number;
-}
+import { Badge } from '@/components/ui/badge';
+import { getChatCompletion } from '@/utils/openaiService';
+import { toast } from 'sonner';
+import { formatDistanceToNow } from 'date-fns';
 
 interface Message {
   role: 'user' | 'assistant';
@@ -21,588 +16,444 @@ interface Message {
   timestamp: Date;
 }
 
-const VoiceInterviewer: React.FC<VoiceInterviewerProps> = ({ 
-  onClose,
-  duration = 30 // default 30 minutes
+interface VoiceInterviewerProps {
+  role?: string;
+  category?: string;
+  onComplete?: (messages: Message[]) => void;
+}
+
+const VoiceInterviewer: React.FC<VoiceInterviewerProps> = ({
+  role = 'Software Engineer',
+  category = 'JavaScript',
+  onComplete,
 }) => {
-  const navigate = useNavigate();
-  const { user } = useAuth();
-  const [isListening, setIsListening] = useState(false);
-  const [isMuted, setIsMuted] = useState(false);
-  const [transcript, setTranscript] = useState('');
-  const [response, setResponse] = useState('');
-  const [isProcessing, setIsProcessing] = useState(false);
-  const [sessionId, setSessionId] = useState<string | null>(null);
-  const [timeRemaining, setTimeRemaining] = useState(duration * 60);
   const [messages, setMessages] = useState<Message[]>([]);
-  const [volume, setVolume] = useState(1);
-  const audioRef = useRef<HTMLAudioElement | null>(null);
-  const mediaRecorderRef = useRef<MediaRecorder | null>(null);
-  const audioChunksRef = useRef<Blob[]>([]);
-  const timerIntervalRef = useRef<number | null>(null);
-  const messagesEndRef = useRef<HTMLDivElement | null>(null);
+  const [input, setInput] = useState('');
+  const [isListening, setIsListening] = useState(false);
+  const [isSpeaking, setIsSpeaking] = useState(false);
+  const [transcript, setTranscript] = useState('');
+  const [isProcessing, setIsProcessing] = useState(false);
+  const [questionCount, setQuestionCount] = useState(0);
+  const messagesEndRef = useRef<HTMLDivElement>(null);
+  const recognitionRef = useRef<SpeechRecognition | null>(null);
+  const synthRef = useRef<SpeechSynthesis | null>(null);
 
-  // HARDCODED OPENAI API KEY (from your existing files)
-  const OPENAI_API_KEY = "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";
-
+  // Initialize speech recognition and synthesis
   useEffect(() => {
-    // Initialize audio element
-    audioRef.current = new Audio();
-    audioRef.current.volume = volume;
+    if ('SpeechRecognition' in window || 'webkitSpeechRecognition' in window) {
+      const SpeechRecognition = window.SpeechRecognition || window.webkitSpeechRecognition;
+      recognitionRef.current = new SpeechRecognition();
+      recognitionRef.current.continuous = true;
+      recognitionRef.current.interimResults = true;
+      recognitionRef.current.lang = 'en-US';
 
-    // Create a session ID when component mounts
-    const newSessionId = crypto.randomUUID();
-    setSessionId(newSessionId);
-    
-    // Start the session timer
-    startTimer();
+      recognitionRef.current.onresult = (event) => {
+        const current = event.resultIndex;
+        const result = event.results[current];
+        const transcriptText = result[0].transcript;
+        setTranscript(transcriptText);
+      };
 
-    // Add welcome message
-    handleBotResponse("Hello, I'm your AI interviewer. I'll ask you technical questions and evaluate your answers. When you're ready to begin, press the microphone button and start speaking. You can end the interview at any time.");
-
-    // Save session to Supabase when component mounts
-    if (user?.id) {
-      saveInitialSession(newSessionId);
+      recognitionRef.current.onerror = (event) => {
+        console.error('Speech recognition error', event.error);
+        toast.error('Speech recognition error: ' + event.error);
+        setIsListening(false);
+      };
+    } else {
+      toast.error('Speech recognition is not supported in this browser');
     }
 
-    // Cleanup
+    if ('speechSynthesis' in window) {
+      synthRef.current = window.speechSynthesis;
+    } else {
+      toast.error('Speech synthesis is not supported in this browser');
+    }
+
     return () => {
-      cleanupRecording();
-      if (timerIntervalRef.current) {
-        clearInterval(timerIntervalRef.current);
+      if (recognitionRef.current) {
+        recognitionRef.current.stop();
+      }
+      if (synthRef.current) {
+        synthRef.current.cancel();
       }
     };
-  }, [user]);
+  }, []);
+
+  // Show welcome message on first load
+  useEffect(() => {
+    showWelcomeMessage();
+  }, []);
 
   // Auto-scroll to bottom of messages
   useEffect(() => {
-    if (messagesEndRef.current) {
-      messagesEndRef.current.scrollIntoView({ behavior: 'smooth' });
-    }
+    scrollToBottom();
   }, [messages]);
 
-  // Update audio volume when volume state changes
-  useEffect(() => {
-    if (audioRef.current) {
-      audioRef.current.volume = volume;
-    }
-  }, [volume]);
-
-  const saveInitialSession = async (newSessionId: string) => {
-    try {
-      await supabase.from('interview_sessions').insert({
-        id: newSessionId,
-        user_id: user?.id,
-        role_type: 'technical',
-        category: 'voice-interview',
-        language: 'english',
-        time_limit: duration,
-        questions_limit: 15,
-        is_coding_enabled: false,
-        start_time: new Date().toISOString()
-      });
-    } catch (error) {
-      console.error('Error saving initial session:', error);
-    }
+  const scrollToBottom = () => {
+    messagesEndRef.current?.scrollIntoView({ behavior: 'smooth' });
   };
 
-  const startTimer = () => {
-    timerIntervalRef.current = window.setInterval(() => {
-      setTimeRemaining(prev => {
-        if (prev <= 1) {
-          endInterview();
-          return 0;
-        }
-        return prev - 1;
-      });
+  const showWelcomeMessage = () => {
+    const welcomeMessage = `Hello! I'm your AI interviewer for the ${role} position. I'll be asking you questions about ${category}. Please speak clearly or type your responses. Let's begin with the first question.`;
+    
+    setMessages([{ 
+      role: "assistant" as "user" | "assistant", 
+      content: welcomeMessage, 
+      timestamp: new Date() 
+    }]);
+    
+    speakText(welcomeMessage);
+    
+    // Generate first question after welcome message
+    setTimeout(() => {
+      generateQuestion();
     }, 1000);
   };
 
-  const formatTime = (seconds: number) => {
-    const minutes = Math.floor(seconds / 60);
-    const remainingSeconds = seconds % 60;
-    return `${minutes}:${remainingSeconds.toString().padStart(2, '0')}`;
-  };
-
-  const startListening = async () => {
-    try {
-      const stream = await navigator.mediaDevices.getUserMedia({ audio: true });
-      
-      const mediaRecorder = new MediaRecorder(stream);
-      mediaRecorderRef.current = mediaRecorder;
-      audioChunksRef.current = [];
-      
-      mediaRecorder.ondataavailable = (event) => {
-        audioChunksRef.current.push(event.data);
-      };
-      
-      mediaRecorder.onstop = async () => {
-        if (audioChunksRef.current.length === 0) return;
-        
-        const audioBlob = new Blob(audioChunksRef.current, { type: 'audio/webm' });
-        await processAudio(audioBlob);
-      };
-      
-      mediaRecorder.start();
-      setIsListening(true);
-    } catch (error) {
-      console.error('Error accessing microphone:', error);
-      toast.error('Failed to access microphone. Please check your permissions.');
+  const toggleListening = () => {
+    if (!recognitionRef.current) {
+      toast.error('Speech recognition is not supported');
+      return;
     }
-  };
 
-  const stopListening = () => {
-    if (mediaRecorderRef.current && mediaRecorderRef.current.state !== 'inactive') {
-      mediaRecorderRef.current.stop();
+    if (isListening) {
+      recognitionRef.current.stop();
       setIsListening(false);
+      if (transcript) {
+        handleUserInput(transcript);
+        setTranscript('');
+      }
+    } else {
+      recognitionRef.current.start();
+      setIsListening(true);
+      toast.success('Listening...');
     }
   };
 
-  const cleanupRecording = () => {
-    if (mediaRecorderRef.current && mediaRecorderRef.current.state !== 'inactive') {
-      mediaRecorderRef.current.stop();
+  const toggleSpeaking = () => {
+    if (!synthRef.current) {
+      toast.error('Speech synthesis is not supported');
+      return;
     }
-    if (mediaRecorderRef.current?.stream) {
-      mediaRecorderRef.current.stream.getTracks().forEach(track => track.stop());
+
+    if (isSpeaking) {
+      synthRef.current.cancel();
+      setIsSpeaking(false);
+    } else {
+      setIsSpeaking(true);
+      // Speak the last assistant message
+      const lastAssistantMessage = [...messages]
+        .reverse()
+        .find(msg => msg.role === 'assistant');
+      
+      if (lastAssistantMessage) {
+        speakText(lastAssistantMessage.content);
+      }
     }
   };
 
-  const toggleMute = () => {
-    setIsMuted(!isMuted);
+  const speakText = (text: string) => {
+    if (!synthRef.current) return;
+
+    // Cancel any ongoing speech
+    synthRef.current.cancel();
+
+    const utterance = new SpeechSynthesisUtterance(text);
+    utterance.rate = 1.0;
+    utterance.pitch = 1.0;
+    utterance.volume = 1.0;
+
+    // Use a more natural voice if available
+    const voices = synthRef.current.getVoices();
+    const preferredVoice = voices.find(voice => 
+      voice.name.includes('Google') || 
+      voice.name.includes('Natural') || 
+      voice.name.includes('Female')
+    );
+    
+    if (preferredVoice) {
+      utterance.voice = preferredVoice;
+    }
+
+    utterance.onstart = () => {
+      setIsSpeaking(true);
+    };
+
+    utterance.onend = () => {
+      setIsSpeaking(false);
+    };
+
+    utterance.onerror = (event) => {
+      console.error('Speech synthesis error', event);
+      setIsSpeaking(false);
+    };
+
+    synthRef.current.speak(utterance);
   };
 
-  const processAudio = async (audioBlob: Blob) => {
+  const handleUserInput = (userInput: string) => {
+    if (!userInput.trim()) return;
+
+    // Add user message to chat
+    setMessages(prevMessages => [
+      ...prevMessages,
+      { 
+        role: "user" as "user" | "assistant", 
+        content: userInput, 
+        timestamp: new Date() 
+      }
+    ]);
+
+    setInput('');
+    processUserResponse(userInput);
+  };
+
+  const handleSubmit = (e: React.FormEvent) => {
+    e.preventDefault();
+    handleUserInput(input);
+  };
+
+  const processUserResponse = async (userResponse: string) => {
     setIsProcessing(true);
     
     try {
-      // Convert blob to base64
-      const reader = new FileReader();
-      reader.readAsDataURL(audioBlob);
-      
-      reader.onloadend = async () => {
-        const base64Audio = reader.result?.toString().split(',')[1];
-        
-        if (!base64Audio) {
-          throw new Error('Failed to convert audio to base64');
-        }
-        
-        // Call Whisper API for speech-to-text
-        const transcriptResponse = await fetch('https://api.openai.com/v1/audio/transcriptions', {
-          method: 'POST',
-          headers: {
-            'Authorization': `Bearer ${OPENAI_API_KEY}`,
-            'Content-Type': 'application/json'
-          },
-          body: JSON.stringify({
-            model: 'whisper-1',
-            file: base64Audio,
-            response_format: 'text'
-          })
-        });
-        
-        if (!transcriptResponse.ok) {
-          throw new Error('Failed to transcribe audio');
-        }
-        
-        const transcriptText = await transcriptResponse.text();
-        setTranscript(transcriptText);
-        
-        // Save user message to messages state
-        const newMessages = [...messages, { role: 'user', content: transcriptText, timestamp: new Date() }];
-        setMessages(newMessages);
-        
-        // Save to Supabase for history
-        if (sessionId && user?.id) {
-          await supabase.from('interview_messages').insert({
-            session_id: sessionId,
-            is_bot: false,
-            content: transcriptText
-          });
-        }
-        
-        // Generate response using chat completion
-        await generateResponse(newMessages);
-      };
-    } catch (error) {
-      console.error('Error processing audio:', error);
-      toast.error('Failed to process audio');
-      setIsProcessing(false);
-    }
-  };
-
-  const generateResponse = async (messageHistory: Message[]) => {
-    try {
-      const formattedMessages = messageHistory.map(msg => ({
-        role: msg.role,
+      // Get all previous messages for context
+      const messageHistory = messages.map(msg => ({
+        role: msg.role === 'user' ? 'user' : 'assistant',
         content: msg.content
       }));
 
-      const response = await fetch('https://api.openai.com/v1/chat/completions', {
-        method: 'POST',
-        headers: {
-          'Authorization': `Bearer ${OPENAI_API_KEY}`,
-          'Content-Type': 'application/json'
-        },
-        body: JSON.stringify({
-          model: 'gpt-4o-mini',
-          messages: [
-            {
-              role: 'system',
-              content: 'You are an expert technical interviewer conducting a programming interview. Ask relevant technical questions, provide feedback on answers, and guide the conversation professionally as if in a real interview. Evaluate responses and provide constructive criticism where appropriate. Keep responses concise and conversational.'
-            },
-            ...formattedMessages
-          ],
-          temperature: 0.7
-        })
+      // Add the new user response
+      messageHistory.push({
+        role: 'user',
+        content: userResponse
       });
-      
-      if (!response.ok) {
-        throw new Error('Failed to generate response');
+
+      // Generate AI response
+      const response = await getChatCompletion([
+        {
+          role: 'system',
+          content: `You are an AI interviewer for a ${role} position, focusing on ${category}. 
+          Evaluate the candidate's responses and ask follow-up questions. 
+          Be professional but conversational. 
+          Ask one question at a time. 
+          Your goal is to assess the candidate's knowledge and experience.`
+        },
+        ...messageHistory
+      ]);
+
+      // Add AI response to chat
+      setMessages(prevMessages => [
+        ...prevMessages,
+        { 
+          role: "assistant" as "user" | "assistant", 
+          content: response, 
+          timestamp: new Date() 
+        }
+      ]);
+
+      // Speak the response if speaking is enabled
+      if (isSpeaking) {
+        speakText(response);
       }
-      
-      const data = await response.json();
-      const responseText = data.choices[0].message.content;
-      
-      // Save response to messages
-      const updatedMessages = [...messageHistory, { role: 'assistant', content: responseText, timestamp: new Date() }];
-      setMessages(updatedMessages);
-      
-      // Save to Supabase for history
-      if (sessionId && user?.id) {
-        await supabase.from('interview_messages').insert({
-          session_id: sessionId,
-          is_bot: true,
-          content: responseText
-        });
-      }
-      
-      // Convert to speech if not muted
-      if (!isMuted) {
-        await textToSpeech(responseText);
-      } else {
-        setResponse(responseText);
-        setIsProcessing(false);
+
+      // Increment question count
+      setQuestionCount(prev => prev + 1);
+
+      // Check if we should end the interview (e.g., after 5 questions)
+      if (questionCount >= 4) {
+        setTimeout(() => {
+          endInterview();
+        }, 5000);
       }
     } catch (error) {
-      console.error('Error generating response:', error);
-      toast.error('Failed to generate response');
+      console.error('Error processing response:', error);
+      toast.error('Failed to process your response');
+    } finally {
       setIsProcessing(false);
     }
   };
 
-  const textToSpeech = async (text: string) => {
-    try {
-      const response = await fetch('https://api.openai.com/v1/audio/speech', {
-        method: 'POST',
-        headers: {
-          'Authorization': `Bearer ${OPENAI_API_KEY}`,
-          'Content-Type': 'application/json'
-        },
-        body: JSON.stringify({
-          model: 'tts-1',
-          input: text,
-          voice: 'alloy',
-          response_format: 'mp3'
-        })
-      });
-      
-      if (!response.ok) {
-        throw new Error('Failed to generate speech');
-      }
-      
-      const audioBlob = await response.blob();
-      const audioUrl = URL.createObjectURL(audioBlob);
-      
-      if (audioRef.current) {
-        audioRef.current.src = audioUrl;
-        audioRef.current.onended = () => {
-          setIsProcessing(false);
-          setResponse(text);
-        };
-        audioRef.current.onerror = () => {
-          setIsProcessing(false);
-          setResponse(text);
-        };
-        audioRef.current.play().catch(err => {
-          console.error('Error playing audio:', err);
-          setIsProcessing(false);
-          setResponse(text);
-        });
-      } else {
-        setIsProcessing(false);
-        setResponse(text);
-      }
-    } catch (error) {
-      console.error('Error converting text to speech:', error);
-      toast.error('Failed to convert text to speech');
-      setResponse(text);
-      setIsProcessing(false);
-    }
-  };
-
-  const handleBotResponse = async (text: string) => {
+  const generateQuestion = async () => {
     setIsProcessing(true);
     
-    // Add to message history
-    const updatedMessages = [...messages, { role: 'assistant', content: text, timestamp: new Date() }];
-    setMessages(updatedMessages);
-    
-    // Save to Supabase
-    if (sessionId && user?.id) {
-      await supabase.from('interview_messages').insert({
-        session_id: sessionId,
-        is_bot: true,
-        content: text
-      });
-    }
-    
-    // Convert to speech if not muted
-    if (!isMuted) {
-      await textToSpeech(text);
-    } else {
-      setResponse(text);
+    try {
+      // Get previous messages for context
+      const messageHistory = messages.map(msg => ({
+        role: msg.role === 'user' ? 'user' : 'assistant',
+        content: msg.content
+      }));
+
+      // Generate a new question
+      const question = await getChatCompletion([
+        {
+          role: 'system',
+          content: `You are an AI interviewer for a ${role} position, focusing on ${category}. 
+          Generate a challenging technical question that would be appropriate for this interview.
+          The question should be specific and test the candidate's knowledge.
+          Do not include any preamble or explanation, just ask the question directly.`
+        },
+        ...messageHistory,
+        {
+          role: 'user',
+          content: 'Please ask me the next interview question.'
+        }
+      ]);
+
+      // Add the question to the chat
+      setMessages(prevMessages => [
+        ...prevMessages,
+        { 
+          role: "assistant" as "user" | "assistant", 
+          content: question, 
+          timestamp: new Date() 
+        }
+      ]);
+
+      // Speak the question if speaking is enabled
+      if (isSpeaking) {
+        speakText(question);
+      }
+
+      setQuestionCount(prev => prev + 1);
+    } catch (error) {
+      console.error('Error generating question:', error);
+      toast.error('Failed to generate interview question');
+    } finally {
       setIsProcessing(false);
     }
   };
 
-  const endInterview = async () => {
-    // Clean up recording
-    cleanupRecording();
-    
-    // Stop timer
-    if (timerIntervalRef.current) {
-      clearInterval(timerIntervalRef.current);
-    }
-    
-    // Save session end time to Supabase
-    if (sessionId && user?.id) {
-      await supabase.from('interview_sessions').update({
-        end_time: new Date().toISOString(),
-        current_question_count: messages.filter(m => m.role === 'assistant').length - 1 // Subtract welcome message
-      }).eq('id', sessionId);
-      
-      // Run analysis on the interview
-      await analyzeInterview();
-      
-      // Redirect to results
-      navigate(`/interview/results/${sessionId}`);
-    } else {
-      // Just close if no session
-      onClose();
-    }
-  };
-
-  const analyzeInterview = async () => {
-    if (!sessionId || !user?.id || messages.length < 3) return;
-
-    try {
-      // Group Q&A pairs
-      const pairs = [];
-      let currentQuestion = '';
-      
-      for (let i = 0; i < messages.length; i++) {
-        if (messages[i].role === 'assistant' && i > 0) {
-          currentQuestion = messages[i].content;
-        } else if (messages[i].role === 'user' && currentQuestion) {
-          pairs.push({
-            question: currentQuestion,
-            answer: messages[i].content
-          });
-          currentQuestion = '';
-        }
+  const endInterview = () => {
+    // Add final message
+    setMessages(prevMessages => [
+      ...prevMessages,
+      { 
+        role: "assistant" as "user" | "assistant", 
+        content: "Thank you for completing the interview. I hope it was helpful. You can now return to the dashboard to see your results.", 
+        timestamp: new Date() 
       }
-      
-      if (pairs.length === 0) return;
-      
-      // Analyze entire interview
-      const response = await fetch('https://api.openai.com/v1/chat/completions', {
-        method: 'POST',
-        headers: {
-          'Authorization': `Bearer ${OPENAI_API_KEY}`,
-          'Content-Type': 'application/json'
-        },
-        body: JSON.stringify({
-          model: 'gpt-4o-mini',
-          messages: [
-            {
-              role: 'system',
-              content: `You are an expert at evaluating technical interview responses. Analyze the following interview Q&A pairs and provide a detailed assessment with:
-              1. An overall score out of 10
-              2. The key strengths demonstrated
-              3. Areas for improvement
-              4. Specific feedback for each question-answer pair
-              Format your response as a JSON object with these keys: average_score, strengths_summary (array), improvement_summary (array), and question_analysis (array of objects with question, answer, feedback, score, strengths, areas_for_improvement)`
-            },
-            {
-              role: 'user',
-              content: JSON.stringify(pairs)
-            }
-          ],
-          temperature: 0.7,
-          response_format: { type: "json_object" }
-        })
-      });
-      
-      if (!response.ok) {
-        throw new Error('Failed to generate analysis');
-      }
-      
-      const data = await response.json();
-      const analysis = JSON.parse(data.choices[0].message.content);
-      
-      // Prepare summary data
-      const summary = {
-        session_id: sessionId,
-        average_score: analysis.average_score,
-        answered_questions: pairs.length,
-        total_questions: pairs.length + 1, // Including last unanswered question
-        time_spent: duration - Math.floor(timeRemaining / 60),
-        question_analysis: analysis.question_analysis,
-        strengths_summary: analysis.strengths_summary.map((item: string) => ({ 
-          name: item, 
-          value: 1 
-        })),
-        improvement_summary: analysis.improvement_summary.map((item: string) => ({ 
-          name: item, 
-          value: 1 
-        })),
-      };
-      
-      // Save analysis to database
-      await supabase
-        .from('interview_analysis')
-        .upsert({
-          session_id: sessionId,
-          summary: summary,
-          created_at: new Date().toISOString()
-        });
-    } catch (error) {
-      console.error('Error analyzing interview:', error);
+    ]);
+
+    // Speak the final message
+    speakText("Thank you for completing the interview. I hope it was helpful. You can now return to the dashboard to see your results.");
+
+    // Call the onComplete callback with the messages
+    if (onComplete) {
+      onComplete(messages);
     }
   };
 
   return (
-    <div className="fixed inset-0 z-50 bg-white flex flex-col items-center justify-center">
-      {/* Circular gradient background */}
-      <div className="absolute inset-0 overflow-hidden">
-        <div className="absolute inset-0 bg-gradient-radial from-blue-100 via-white to-white animate-pulse-slow"></div>
-      </div>
-      
-      {/* Close button */}
-      <Button 
-        variant="outline" 
-        size="icon" 
-        className="absolute top-4 right-4 z-10"
-        onClick={onClose}>
-        <X className="h-4 w-4" />
-      </Button>
-      
-      {/* Timer display */}
-      <div className="absolute top-4 left-4 z-10 bg-white/80 rounded-lg px-3 py-1 font-mono">
-        {formatTime(timeRemaining)}
-      </div>
-      
-      {/* Main content */}
-      <div className="relative z-10 w-full max-w-4xl mx-auto flex flex-col items-center h-[90vh]">
-        <h2 className="text-2xl font-bold mb-4">AI Voice Interviewer</h2>
-        
-        {/* Chat history */}
-        <ScrollArea className="w-full bg-white/80 rounded-lg p-4 mb-6 flex-1">
-          <div className="space-y-4">
-            {messages.map((msg, index) => (
-              <div key={index} className={`flex ${msg.role === 'user' ? 'justify-end' : 'justify-start'}`}>
-                <div className={`flex items-start gap-2 max-w-[80%] ${msg.role === 'user' ? 'flex-row-reverse' : ''}`}>
-                  <div className={`flex-shrink-0 h-8 w-8 rounded-full flex items-center justify-center ${
-                    msg.role === 'user' ? 'bg-primary text-primary-foreground' : 'bg-secondary'
-                  }`}>
-                    {msg.role === 'user' ? <User className="h-4 w-4" /> : <Bot className="h-4 w-4" />}
-                  </div>
-                  <div className={`rounded-lg p-3 ${
-                    msg.role === 'user' 
-                    ? 'bg-primary text-primary-foreground rounded-tr-none' 
-                    : 'bg-muted rounded-tl-none'
-                  }`}>
-                    <p className="whitespace-pre-wrap">{msg.content}</p>
-                    <p className="text-xs opacity-70 mt-1">
-                      {new Date(msg.timestamp).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}
-                    </p>
-                  </div>
-                </div>
+    <div className="flex flex-col h-full">
+      <Card className="flex-1 flex flex-col overflow-hidden">
+        <CardContent className="flex-1 flex flex-col p-4 gap-4 overflow-hidden">
+          <div className="flex justify-between items-center mb-2">
+            <div className="flex items-center gap-2">
+              <Avatar>
+                <AvatarImage src="/ai-avatar.png" alt="AI Interviewer" />
+                <AvatarFallback>AI</AvatarFallback>
+              </Avatar>
+              <div>
+                <h3 className="font-medium">AI Interviewer</h3>
+                <p className="text-sm text-muted-foreground">{role} - {category}</p>
               </div>
-            ))}
-            {isProcessing && (
-              <div className="flex justify-start">
-                <div className="bg-muted rounded-lg p-3 rounded-tl-none">
-                  <div className="flex items-center gap-2">
-                    <div className="w-2 h-2 bg-primary rounded-full animate-pulse"></div>
-                    <div className="w-2 h-2 bg-primary rounded-full animate-pulse delay-75"></div>
-                    <div className="w-2 h-2 bg-primary rounded-full animate-pulse delay-150"></div>
-                  </div>
-                </div>
-              </div>
-            )}
-            <div ref={messagesEndRef} />
-          </div>
-        </ScrollArea>
-        
-        {/* Controls */}
-        <div className="w-full px-4">
-          <Separator className="mb-4" />
-          
-          <div className="flex flex-col items-center">
-            <div className="flex items-center justify-center gap-4 mb-4">
-              <Button
-                size="lg"
-                disabled={isProcessing}
-                variant={isListening ? "destructive" : "default"}
-                className="rounded-full h-16 w-16 flex items-center justify-center"
-                onClick={isListening ? stopListening : startListening}
-              >
-                {isListening ? (
-                  <MicOff className="h-6 w-6" />
-                ) : (
-                  <Mic className="h-6 w-6" />
-                )}
-              </Button>
-              
-              <Button
-                variant="outline"
-                className="rounded-full h-12 w-12 flex items-center justify-center"
-                onClick={toggleMute}
-              >
-                {isMuted ? (
-                  <VolumeX className="h-5 w-5" />
-                ) : (
-                  <Volume2 className="h-5 w-5" />
-                )}
-              </Button>
             </div>
-            
-            {/* Volume slider */}
-            {!isMuted && (
-              <div className="w-48 mb-6">
-                <Slider
-                  value={[volume * 100]}
-                  min={0}
-                  max={100}
-                  step={1}
-                  onValueChange={(value) => setVolume(value[0] / 100)}
-                />
+            <Badge variant="outline" className="bg-primary/10">
+              Question {questionCount}/5
+            </Badge>
+          </div>
+
+          <ScrollArea className="flex-1 pr-4">
+            <div className="space-y-4">
+              {messages.map((message, index) => (
+                <div
+                  key={index}
+                  className={`flex ${
+                    message.role === 'user' ? 'justify-end' : 'justify-start'
+                  }`}
+                >
+                  <div
+                    className={`max-w-[80%] rounded-lg p-3 ${
+                      message.role === 'user'
+                        ? 'bg-primary text-primary-foreground'
+                        : 'bg-muted'
+                    }`}
+                  >
+                    <div className="mb-1">{message.content}</div>
+                    <div className="text-xs opacity-70 text-right">
+                      {formatDistanceToNow(message.timestamp, { addSuffix: true })}
+                    </div>
+                  </div>
+                </div>
+              ))}
+              <div ref={messagesEndRef} />
+            </div>
+          </ScrollArea>
+
+          <form onSubmit={handleSubmit} className="flex flex-col gap-2">
+            <div className="relative">
+              <Textarea
+                value={isListening ? transcript : input}
+                onChange={(e) => setInput(e.target.value)}
+                placeholder="Type your response or use voice input..."
+                className="min-h-[80px] pr-20"
+                disabled={isListening || isProcessing}
+              />
+              <div className="absolute right-2 bottom-2 flex gap-1">
+                <Button
+                  type="button"
+                  size="icon"
+                  variant="ghost"
+                  onClick={toggleSpeaking}
+                  disabled={isProcessing}
+                >
+                  {isSpeaking ? (
+                    <VolumeX className="h-4 w-4" />
+                  ) : (
+                    <Volume2 className="h-4 w-4" />
+                  )}
+                </Button>
+                <Button
+                  type="button"
+                  size="icon"
+                  variant="ghost"
+                  onClick={toggleListening}
+                  disabled={isProcessing}
+                >
+                  {isListening ? (
+                    <MicOff className="h-4 w-4 text-red-500" />
+                  ) : (
+                    <Mic className="h-4 w-4" />
+                  )}
+                </Button>
               </div>
-            )}
-            
-            <div className="flex justify-center">
-              <Button 
-                variant="outline" 
-                className="px-6"
+            </div>
+            <div className="flex justify-between">
+              <Button
+                type="button"
+                variant="outline"
                 onClick={endInterview}
+                disabled={isProcessing}
               >
                 End Interview
               </Button>
+              <Button
+                type="submit"
+                disabled={(!input && !transcript) || isProcessing || isListening}
+              >
+                {isProcessing ? (
+                  <div className="h-4 w-4 animate-spin rounded-full border-2 border-current border-t-transparent" />
+                ) : (
+                  <>
+                    Send <Send className="ml-2 h-4 w-4" />
+                  </>
+                )}
+              </Button>
             </div>
-          </div>
-        </div>
-      </div>
+          </form>
+        </CardContent>
+      </Card>
     </div>
   );
 };
