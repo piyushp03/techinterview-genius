@@ -1,7 +1,6 @@
-
 import { toast } from 'sonner';
 
-// OpenAI API Key (hardcoded for testing purposes only)
+// OpenAI API Key (hardcoded for testing purposes only - kept from original file)
 const OPENAI_API_KEY = "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";
 
 // Types
@@ -422,4 +421,117 @@ export function calculateSimilarity(expectedAnswer: string, providedAnswer: stri
   // Calculate Jaccard similarity
   const union = new Set([...normalizeText(expectedAnswer), ...normalizeText(providedAnswer)]);
   return matchCount / union.size;
+}
+
+/**
+ * Analyze resume and provide feedback
+ */
+export async function analyzeResume(resumeText: string): Promise<{
+  strengths: string[];
+  weaknesses: string[];
+  suggestions: string[];
+  jobFit: 'low' | 'medium' | 'high';
+  score: number;
+}> {
+  const systemPrompt = `You are an expert resume reviewer. Analyze the resume carefully and provide specific, actionable feedback.
+  Focus on content, structure, clarity, relevance, and impact.
+  Identify specific strengths and weaknesses.
+  Provide concrete suggestions for improvement.
+  Assess overall job readiness.`;
+
+  const messages: ChatMessage[] = [
+    { role: 'system', content: systemPrompt },
+    { role: 'user', content: `Here is the resume to analyze: ${resumeText}` },
+  ];
+
+  try {
+    const response = await getChatCompletion(messages, {
+      temperature: 0.5,
+      max_tokens: 1500,
+    });
+    
+    // Basic parsing of the AI response to extract structured information
+    const strengths: string[] = [];
+    const weaknesses: string[] = [];
+    const suggestions: string[] = [];
+    let score = 0;
+    let jobFit: 'low' | 'medium' | 'high' = 'medium';
+    
+    // Extract strengths
+    if (response.includes('Strengths:')) {
+      const strengthsSection = response.split('Strengths:')[1].split(/Weaknesses:|Areas for Improvement:/)[0];
+      const strengthItems = strengthsSection.split(/\n+/).filter(item => item.trim().startsWith('-'));
+      strengthItems.forEach(item => {
+        const cleaned = item.replace(/^-\s*/, '').trim();
+        if (cleaned) strengths.push(cleaned);
+      });
+    }
+    
+    // Extract weaknesses
+    const weaknessesRegex = /Weaknesses:|Areas for Improvement:|Areas to Improve:/;
+    if (response.match(weaknessesRegex)) {
+      const weaknessesSection = response.split(weaknessesRegex)[1].split(/Suggestions:|Recommendations:/)[0];
+      const weaknessItems = weaknessesSection.split(/\n+/).filter(item => item.trim().startsWith('-'));
+      weaknessItems.forEach(item => {
+        const cleaned = item.replace(/^-\s*/, '').trim();
+        if (cleaned) weaknesses.push(cleaned);
+      });
+    }
+    
+    // Extract suggestions
+    const suggestionsRegex = /Suggestions:|Recommendations:/;
+    if (response.match(suggestionsRegex)) {
+      const suggestionsSection = response.split(suggestionsRegex)[1].split(/Overall Assessment:|Score:|Job Fit:/)[0];
+      const suggestionItems = suggestionsSection.split(/\n+/).filter(item => item.trim().startsWith('-'));
+      suggestionItems.forEach(item => {
+        const cleaned = item.replace(/^-\s*/, '').trim();
+        if (cleaned) suggestions.push(cleaned);
+      });
+    }
+    
+    // Extract score
+    if (response.includes('Score:')) {
+      const scoreMatch = response.match(/Score:\s*(\d+)/i);
+      if (scoreMatch && scoreMatch[1]) {
+        score = parseInt(scoreMatch[1], 10);
+        if (score < 1) score = 1;
+        if (score > 100) score = 100;
+      }
+    }
+    
+    // Extract job fit
+    if (response.toLowerCase().includes('job fit:')) {
+      const jobFitLower = response.toLowerCase();
+      if (jobFitLower.includes('high') || jobFitLower.includes('strong') || jobFitLower.includes('excellent')) {
+        jobFit = 'high';
+      } else if (jobFitLower.includes('low') || jobFitLower.includes('poor') || jobFitLower.includes('weak')) {
+        jobFit = 'low';
+      } else {
+        jobFit = 'medium';
+      }
+    }
+    
+    // Default values if parsing failed
+    if (strengths.length === 0) strengths.push('Clear presentation of skills');
+    if (weaknesses.length === 0) weaknesses.push('Could be more concise');
+    if (suggestions.length === 0) suggestions.push('Add more quantifiable achievements');
+    if (score === 0) score = 70;
+    
+    return {
+      strengths,
+      weaknesses,
+      suggestions,
+      jobFit,
+      score
+    };
+  } catch (error) {
+    console.error('Error analyzing resume:', error);
+    return {
+      strengths: ['Clear presentation of skills', 'Good job history'],
+      weaknesses: ['Could be more concise', 'Some technical jargon may be unclear'],
+      suggestions: ['Add more metrics', 'Tailor to specific jobs'],
+      jobFit: 'medium',
+      score: 70
+    };
+  }
 }

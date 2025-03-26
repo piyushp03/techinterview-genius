@@ -1,3 +1,4 @@
+
 import { useState, useEffect } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { useAuth } from '@/context/AuthContext';
@@ -6,9 +7,10 @@ import Navbar from '@/components/Navbar';
 import { Button } from '@/components/ui/button';
 import { Card, CardContent, CardDescription, CardFooter, CardHeader, CardTitle } from '@/components/ui/card';
 import { Badge } from '@/components/ui/badge';
-import { History as HistoryIcon, Calendar, ChevronRight, Trash2 } from 'lucide-react';
+import { History as HistoryIcon, Calendar, ChevronRight, Trash2, Clock, CheckCircle, BarChart } from 'lucide-react';
 import { toast } from 'sonner';
 import { format } from 'date-fns';
+import { Progress } from '@/components/ui/progress';
 
 const History = () => {
   const { user } = useAuth();
@@ -24,7 +26,6 @@ const History = () => {
     if (!user) return;
     
     try {
-      // Fixed: Use "interview_sessions" as a string argument with type safety
       const { data, error } = await supabase
         .from('interview_sessions')
         .select('*')
@@ -48,7 +49,6 @@ const History = () => {
     }
     
     try {
-      // Fixed: Use "interview_sessions" as a string argument with type safety
       const { error } = await supabase
         .from('interview_sessions')
         .delete()
@@ -67,17 +67,45 @@ const History = () => {
 
   const getCategoryColor = (category: string) => {
     const categories: Record<string, string> = {
-      'General Programming': 'bg-blue-100 text-blue-800',
-      'Algorithms & Data Structures': 'bg-purple-100 text-purple-800',
-      'System Design': 'bg-red-100 text-red-800',
-      'Object-Oriented Design': 'bg-amber-100 text-amber-800',
-      'Database': 'bg-green-100 text-green-800',
-      'Web Development': 'bg-indigo-100 text-indigo-800',
-      'Cloud & DevOps': 'bg-sky-100 text-sky-800',
-      'Behavioral': 'bg-teal-100 text-teal-800',
+      'algorithms': 'bg-purple-100 text-purple-800',
+      'system-design': 'bg-red-100 text-red-800',
+      'behavioral': 'bg-teal-100 text-teal-800',
+      'language-specific': 'bg-indigo-100 text-indigo-800',
     };
     
     return categories[category] || 'bg-gray-100 text-gray-800';
+  };
+
+  const getSessionStatusInfo = (session: any) => {
+    if (session.end_time) {
+      return {
+        status: 'Completed',
+        icon: <CheckCircle className="h-4 w-4 text-green-500" />,
+        buttonText: 'View Results',
+        action: () => navigate(`/interview/results/${session.id}`),
+      };
+    } else if (session.start_time) {
+      return {
+        status: 'In Progress',
+        icon: <Clock className="h-4 w-4 text-amber-500" />,
+        buttonText: 'Continue Session',
+        action: () => navigate(`/interview/${session.id}`),
+      };
+    } else {
+      return {
+        status: 'Not Started',
+        icon: <Calendar className="h-4 w-4 text-blue-500" />,
+        buttonText: 'Start Session',
+        action: () => navigate(`/interview/${session.id}`),
+      };
+    }
+  };
+
+  const calculateProgress = (session: any) => {
+    if (!session.current_question_count || !session.questions_limit) {
+      return 0;
+    }
+    return Math.min(100, (session.current_question_count / session.questions_limit) * 100);
   };
 
   return (
@@ -103,47 +131,73 @@ const History = () => {
           </div>
         ) : (
           <div className="grid gap-6 md:grid-cols-2 lg:grid-cols-3">
-            {sessions.map((session) => (
-              <Card key={session.id} className="hover:shadow-md transition-shadow">
-                <CardHeader className="pb-2">
-                  <div className="flex justify-between items-start">
-                    <CardTitle>{session.role_type}</CardTitle>
-                    <Badge variant="outline" className={getCategoryColor(session.category)}>
-                      {session.category}
-                    </Badge>
-                  </div>
-                  <CardDescription className="flex items-center gap-1">
-                    <Calendar className="h-3 w-3" />
-                    {format(new Date(session.created_at), 'PPP')}
-                  </CardDescription>
-                </CardHeader>
-                <CardContent>
-                  <div className="space-y-2">
-                    <div className="flex items-center justify-between">
-                      <span className="text-sm font-medium">Language:</span>
-                      <span className="text-sm">{session.language}</span>
+            {sessions.map((session) => {
+              const { status, icon, buttonText, action } = getSessionStatusInfo(session);
+              
+              return (
+                <Card key={session.id} className="hover:shadow-md transition-shadow">
+                  <CardHeader className="pb-2">
+                    <div className="flex justify-between items-start">
+                      <CardTitle>{session.role_type}</CardTitle>
+                      <Badge variant="outline" className={getCategoryColor(session.category)}>
+                        {session.category}
+                      </Badge>
                     </div>
-                  </div>
-                </CardContent>
-                <CardFooter className="flex justify-between">
-                  <Button 
-                    variant="ghost" 
-                    size="icon"
-                    onClick={() => handleDeleteSession(session.id)}
-                  >
-                    <Trash2 className="h-4 w-4 text-destructive" />
-                  </Button>
-                  <Button 
-                    variant="outline" 
-                    className="gap-1"
-                    onClick={() => navigate(`/interview/${session.id}`)}
-                  >
-                    Continue Session
-                    <ChevronRight className="h-4 w-4" />
-                  </Button>
-                </CardFooter>
-              </Card>
-            ))}
+                    <CardDescription className="flex items-center gap-1">
+                      <Calendar className="h-3 w-3" />
+                      {format(new Date(session.created_at), 'PPP')}
+                    </CardDescription>
+                  </CardHeader>
+                  <CardContent>
+                    <div className="space-y-4">
+                      <div className="flex items-center justify-between">
+                        <span className="text-sm font-medium">Language:</span>
+                        <span className="text-sm">{session.language}</span>
+                      </div>
+                      
+                      <div className="space-y-1">
+                        <div className="flex items-center justify-between text-sm">
+                          <span>Progress:</span>
+                          <span>{session.current_question_count || 0}/{session.questions_limit}</span>
+                        </div>
+                        <Progress value={calculateProgress(session)} className="h-2" />
+                      </div>
+                      
+                      <div className="flex items-center justify-between">
+                        <span className="text-sm font-medium">Status:</span>
+                        <span className="text-sm flex items-center gap-1">
+                          {icon} {status}
+                        </span>
+                      </div>
+                    </div>
+                  </CardContent>
+                  <CardFooter className="flex justify-between">
+                    <Button 
+                      variant="ghost" 
+                      size="icon"
+                      onClick={(e) => {
+                        e.stopPropagation();
+                        handleDeleteSession(session.id);
+                      }}
+                    >
+                      <Trash2 className="h-4 w-4 text-destructive" />
+                    </Button>
+                    <Button 
+                      variant={session.end_time ? "default" : "outline"}
+                      className="gap-1"
+                      onClick={action}
+                    >
+                      {buttonText}
+                      {session.end_time ? (
+                        <BarChart className="h-4 w-4" />
+                      ) : (
+                        <ChevronRight className="h-4 w-4" />
+                      )}
+                    </Button>
+                  </CardFooter>
+                </Card>
+              );
+            })}
           </div>
         )}
       </main>

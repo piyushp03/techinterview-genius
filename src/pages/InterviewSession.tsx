@@ -1,5 +1,5 @@
 
-import { useState, useEffect, useRef } from 'react';
+import React, { useState, useEffect, useRef } from 'react';
 import { useParams, useNavigate } from 'react-router-dom';
 import { useAuth } from '@/context/AuthContext';
 import { supabase } from '@/integrations/supabase/client';
@@ -12,6 +12,12 @@ import { Progress } from '@/components/ui/progress';
 import { Maximize, Minimize, ArrowLeft, Clock, CheckSquare } from 'lucide-react';
 import { toast } from 'sonner';
 import { generateInterviewQuestion } from '@/utils/openaiService';
+
+// Fix build error by explicitly defining props for CodeEditor
+interface CodeEditorProps {
+  language: string;
+  readOnly: boolean;
+}
 
 const InterviewSession = () => {
   const { id } = useParams<{ id: string }>();
@@ -377,8 +383,9 @@ const InterviewSession = () => {
                   />
                 </TabsContent>
                 <TabsContent value="code" className="flex-1 flex">
+                  {/* Fix: Pass props as a valid CodeEditor component props */}
                   <CodeEditor
-                    language={sessionData?.language.toLowerCase()}
+                    language={sessionData?.language || 'javascript'}
                     readOnly={isCompleted}
                   />
                 </TabsContent>

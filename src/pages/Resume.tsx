@@ -1,10 +1,16 @@
+
 import { useState } from 'react';
 import { useAuth } from '@/context/AuthContext';
 import Navbar from '@/components/Navbar';
 import ResumeUploader from '@/components/ResumeUploader';
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card';
 import { Button } from '@/components/ui/button';
-import { FileText, Check, AlertTriangle, RefreshCw } from 'lucide-react';
+import { FileText, Check, AlertTriangle, RefreshCw, PieChart } from 'lucide-react';
+import { analyzeResume } from '@/utils/openaiService';
+import { supabase } from '@/integrations/supabase/client';
+import { PieChart as RechartsPieChart, Pie, Cell, ResponsiveContainer, Legend, Tooltip } from 'recharts';
+import { ChartContainer } from '@/components/ui/chart';
+import { toast } from 'sonner';
 
 const Resume = () => {
   const { user } = useAuth();
@@ -17,37 +23,28 @@ const Resume = () => {
     setAnalysisResult(null);
   };
 
-  const analyzeResume = async () => {
+  const analyzeResumeText = async () => {
     if (!resumeText) return;
     
     setIsAnalyzing(true);
     
     try {
-      // Simulate AI analysis with a delay
-      await new Promise(resolve => setTimeout(resolve, 2000));
+      // Use the OpenAI API to analyze the resume
+      const result = await analyzeResume(resumeText);
+      setAnalysisResult(result);
       
-      // Mock response - in production, this would be a call to an API
-      setAnalysisResult({
-        strengths: [
-          'Clear presentation of technical skills',
-          'Quantified achievements',
-          'Good job history progression'
-        ],
-        weaknesses: [
-          'Too verbose in some sections',
-          'Some technical jargon may be unclear to non-technical recruiters',
-          'Project descriptions could be more concise'
-        ],
-        suggestions: [
-          'Tailor your resume more specifically to each job application',
-          'Add more metrics and quantifiable results',
-          'Consider a skills-based format to highlight technical expertise'
-        ],
-        jobFit: 'medium',
-        score: 78
-      });
+      // Save the analysis to Supabase if user is logged in
+      if (user) {
+        await supabase.from('resume_analysis').upsert({
+          user_id: user.id,
+          resume_text: resumeText,
+          analysis_result: result,
+          created_at: new Date().toISOString()
+        });
+      }
     } catch (error) {
       console.error('Resume analysis error:', error);
+      toast.error('Failed to analyze resume');
     } finally {
       setIsAnalyzing(false);
     }
@@ -77,6 +74,49 @@ const Resume = () => {
         {score}/100
       </div>
     );
+  };
+
+  const COLORS = ['#4f46e5', '#10b981', '#f59e0b', '#ef4444'];
+  
+  const getSkillsChartData = () => {
+    if (!analysisResult) return [];
+    
+    // Hypothetical skill scores based on the analysis
+    return [
+      { name: 'Technical', value: calculateSkillScore('technical') },
+      { name: 'Communication', value: calculateSkillScore('communication') },
+      { name: 'Leadership', value: calculateSkillScore('leadership') },
+      { name: 'Problem Solving', value: calculateSkillScore('problem-solving') }
+    ];
+  };
+  
+  const calculateSkillScore = (skillType: string) => {
+    // This is a simplistic way to extract skill scores from the analysis
+    // In a real implementation, the AI would provide these scores directly
+    const strengths = analysisResult.strengths.join(' ').toLowerCase();
+    const weaknesses = analysisResult.weaknesses.join(' ').toLowerCase();
+    
+    let baseScore = 70; // Start with a neutral score
+    
+    const keywords: Record<string, string[]> = {
+      'technical': ['technical', 'skills', 'programming', 'development', 'coding', 'software', 'engineering'],
+      'communication': ['communication', 'writing', 'presenting', 'detail', 'clarity', 'articulate'],
+      'leadership': ['leadership', 'management', 'team', 'initiative', 'leading', 'directing'],
+      'problem-solving': ['problem', 'solving', 'analytical', 'solution', 'approach', 'critical']
+    };
+    
+    // Increase score for strengths that match this skill
+    keywords[skillType].forEach(keyword => {
+      if (strengths.includes(keyword)) baseScore += 5;
+    });
+    
+    // Decrease score for weaknesses that match this skill
+    keywords[skillType].forEach(keyword => {
+      if (weaknesses.includes(keyword)) baseScore -= 5;
+    });
+    
+    // Ensure the score stays within 0-100
+    return Math.min(100, Math.max(0, baseScore));
   };
 
   return (
@@ -121,7 +161,7 @@ const Resume = () => {
                     Upload a Different Resume
                   </Button>
                   <Button 
-                    onClick={analyzeResume} 
+                    onClick={analyzeResumeText} 
                     disabled={isAnalyzing}
                     className="gap-2"
                   >
@@ -171,6 +211,35 @@ const Resume = () => {
                     Overall assessment of your resume
                   </CardDescription>
                 </CardHeader>
+                <CardContent className="h-52">
+                  <ChartContainer config={{
+                    Technical: { color: '#4f46e5' },
+                    Communication: { color: '#10b981' },
+                    Leadership: { color: '#f59e0b' },
+                    'Problem Solving': { color: '#ef4444' }
+                  }}>
+                    <ResponsiveContainer width="100%" height="100%">
+                      <RechartsPieChart>
+                        <Pie
+                          data={getSkillsChartData()}
+                          cx="50%"
+                          cy="50%"
+                          innerRadius={60}
+                          outerRadius={80}
+                          fill="#8884d8"
+                          paddingAngle={5}
+                          dataKey="value"
+                          label={({ name, percent }) => `${name}: ${(percent * 100).toFixed(0)}%`}
+                        >
+                          {getSkillsChartData().map((entry, index) => (
+                            <Cell key={`cell-${index}`} fill={COLORS[index % COLORS.length]} />
+                          ))}
+                        </Pie>
+                        <Tooltip />
+                      </RechartsPieChart>
+                    </ResponsiveContainer>
+                  </ChartContainer>
+                </CardContent>
               </Card>
               
               <Card>
