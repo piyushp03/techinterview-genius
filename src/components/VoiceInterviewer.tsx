@@ -99,6 +99,7 @@ const VoiceInterviewer: React.FC<VoiceInterviewerProps> = ({
   const messagesEndRef = useRef<HTMLDivElement>(null);
   const recognitionRef = useRef<SpeechRecognition | null>(null);
   const synthRef = useRef<SpeechSynthesis | null>(null);
+  const currentUtteranceRef = useRef<SpeechSynthesisUtterance | null>(null);
 
   // Initialize speech recognition and synthesis
   useEffect(() => {
@@ -115,12 +116,24 @@ const VoiceInterviewer: React.FC<VoiceInterviewerProps> = ({
         const result = event.results[current];
         const transcriptText = result[0].transcript;
         setTranscript(transcriptText);
+        
+        // If it's a final result and not a partial one
+        if (result.isFinal) {
+          setInput(transcriptText);
+        }
       };
 
       recognitionRef.current.onerror = (event) => {
         console.error('Speech recognition error', event);
         toast.error('Speech recognition error occurred');
         setIsListening(false);
+      };
+
+      recognitionRef.current.onend = () => {
+        if (isListening) {
+          // If it disconnected but we still want to listen, restart it
+          recognitionRef.current?.start();
+        }
       };
     } else {
       toast.error('Speech recognition is not supported in this browser');
@@ -234,7 +247,8 @@ const VoiceInterviewer: React.FC<VoiceInterviewerProps> = ({
 
     // Cancel any ongoing speech
     synthRef.current.cancel();
-
+    
+    // Create a new utterance
     const utterance = new SpeechSynthesisUtterance(text);
     utterance.rate = 1.0;
     utterance.pitch = 1.0;
@@ -258,13 +272,17 @@ const VoiceInterviewer: React.FC<VoiceInterviewerProps> = ({
 
     utterance.onend = () => {
       setIsSpeaking(false);
+      currentUtteranceRef.current = null;
     };
 
     utterance.onerror = (event) => {
       console.error('Speech synthesis error', event);
       setIsSpeaking(false);
+      currentUtteranceRef.current = null;
     };
 
+    // Save reference to current utterance
+    currentUtteranceRef.current = utterance;
     synthRef.current.speak(utterance);
   };
 
@@ -282,6 +300,7 @@ const VoiceInterviewer: React.FC<VoiceInterviewerProps> = ({
     ]);
 
     setInput('');
+    setTranscript('');
     processUserResponse(userInput);
   };
 
@@ -422,7 +441,9 @@ const VoiceInterviewer: React.FC<VoiceInterviewerProps> = ({
 
     // Call the onClose callback if provided
     if (onClose) {
-      onClose();
+      setTimeout(() => {
+        onClose();
+      }, 3000);
     }
   };
 
@@ -513,9 +534,10 @@ const VoiceInterviewer: React.FC<VoiceInterviewerProps> = ({
                   variant="ghost"
                   onClick={toggleListening}
                   disabled={isProcessing}
+                  className={isListening ? "text-red-500" : ""}
                 >
                   {isListening ? (
-                    <MicOff className="h-4 w-4 text-red-500" />
+                    <MicOff className="h-4 w-4" />
                   ) : (
                     <Mic className="h-4 w-4" />
                   )}

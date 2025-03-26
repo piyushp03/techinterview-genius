@@ -14,7 +14,7 @@ import { markdown } from '@codemirror/lang-markdown';
 import { rust } from '@codemirror/lang-rust';
 import { sql } from '@codemirror/lang-sql';
 import { xml } from '@codemirror/lang-xml';
-import { basicSetup } from '@codemirror/basic-setup';
+import { basicSetup } from 'codemirror';
 
 export interface CodeEditorProps {
   language?: string;

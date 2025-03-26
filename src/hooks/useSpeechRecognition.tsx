@@ -76,6 +76,7 @@ export const useSpeechRecognition = ({
   const SpeechRecognitionAPI = (window as any).SpeechRecognition || (window as any).webkitSpeechRecognition;
   const browserSupportsSpeechRecognition = !!SpeechRecognitionAPI;
 
+  // Initialize recognition on mount
   useEffect(() => {
     if (!browserSupportsSpeechRecognition) {
       console.error('This browser does not support speech recognition.');
@@ -88,21 +89,18 @@ export const useSpeechRecognition = ({
     recognitionRef.current.lang = lang;
 
     return () => {
-      if (recognitionRef.current) {
+      if (recognitionRef.current && listening) {
         recognitionRef.current.abort();
+        setListening(false);
       }
     };
-  }, [browserSupportsSpeechRecognition, continuous, interimResults, lang]);
+  }, [browserSupportsSpeechRecognition, continuous, interimResults, lang, listening]);
 
-  const startListening = useCallback(() => {
-    if (!browserSupportsSpeechRecognition || !recognitionRef.current) {
-      console.error('Speech recognition is not supported');
-      return;
-    }
+  // Set up recognition event handlers
+  useEffect(() => {
+    if (!recognitionRef.current) return;
 
-    setTranscript('');
-
-    recognitionRef.current.onresult = (event: SpeechRecognitionEvent) => {
+    const handleResult = (event: SpeechRecognitionEvent) => {
       let currentTranscript = '';
       for (let i = event.resultIndex; i < event.results.length; i++) {
         const result = event.results[i];
@@ -116,20 +114,42 @@ export const useSpeechRecognition = ({
       }
     };
 
-    recognitionRef.current.onerror = (event: SpeechRecognitionErrorEvent) => {
+    const handleError = (event: SpeechRecognitionErrorEvent) => {
       console.error('Speech recognition error', event.error, event.message);
     };
 
-    recognitionRef.current.onend = () => {
-      setListening(false);
-      if (onEnd) {
-        onEnd();
+    const handleEnd = () => {
+      if (listening) {
+        // If it was supposed to be listening but ended, restart it
+        recognitionRef.current?.start();
+      } else {
+        setListening(false);
+        if (onEnd) {
+          onEnd();
+        }
       }
     };
 
-    recognitionRef.current.start();
-    setListening(true);
-  }, [browserSupportsSpeechRecognition, onResult, onEnd]);
+    recognitionRef.current.onresult = handleResult;
+    recognitionRef.current.onerror = handleError;
+    recognitionRef.current.onend = handleEnd;
+  }, [onResult, onEnd, listening]);
+
+  const startListening = useCallback(() => {
+    if (!browserSupportsSpeechRecognition || !recognitionRef.current) {
+      console.error('Speech recognition is not supported');
+      return;
+    }
+
+    setTranscript('');
+
+    try {
+      recognitionRef.current.start();
+      setListening(true);
+    } catch (error) {
+      console.error('Error starting speech recognition:', error);
+    }
+  }, [browserSupportsSpeechRecognition]);
 
   const stopListening = useCallback(() => {
     if (recognitionRef.current) {

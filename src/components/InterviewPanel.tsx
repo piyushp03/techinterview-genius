@@ -1,8 +1,9 @@
 
 import { useState, useRef, useEffect } from 'react';
-import { Mic, MicOff, Send, User, PauseCircle, FileText, RotateCcw, Maximize, Minimize } from 'lucide-react';
+import { Mic, MicOff, Send, User, PauseCircle, PlayCircle, FileText, RotateCcw, Maximize, Minimize } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import useSpeechRecognition from '@/hooks/useSpeechRecognition';
+import { toast } from 'sonner';
 
 interface InterviewPanelProps {
   isFullScreen: boolean;
@@ -28,6 +29,8 @@ const InterviewPanel = ({
   const messagesEndRef = useRef<HTMLDivElement>(null);
   const messageInputRef = useRef<HTMLTextAreaElement>(null);
   const [isSpeaking, setIsSpeaking] = useState(false);
+  const synthesisRef = useRef<SpeechSynthesis | null>(null);
+  const currentUtteranceRef = useRef<SpeechSynthesisUtterance | null>(null);
   
   const { 
     transcript, 
@@ -48,6 +51,81 @@ const InterviewPanel = ({
     }
   }, [messages]);
 
+  // Initialize speech synthesis
+  useEffect(() => {
+    if (typeof window !== 'undefined' && 'speechSynthesis' in window) {
+      synthesisRef.current = window.speechSynthesis;
+    }
+
+    return () => {
+      if (synthesisRef.current && currentUtteranceRef.current) {
+        synthesisRef.current.cancel();
+      }
+    };
+  }, []);
+
+  // Speak last bot message when isSpeaking changes
+  useEffect(() => {
+    if (isSpeaking && messages.length > 0) {
+      const lastBotMessage = [...messages].reverse().find(msg => msg.is_bot);
+      if (lastBotMessage) {
+        speakText(lastBotMessage.content);
+      }
+    } else if (!isSpeaking && synthesisRef.current) {
+      synthesisRef.current.cancel();
+    }
+  }, [isSpeaking, messages]);
+
+  const speakText = (text: string) => {
+    if (!synthesisRef.current) {
+      toast.error("Speech synthesis not supported in your browser");
+      return;
+    }
+
+    // Cancel any ongoing speech
+    synthesisRef.current.cancel();
+
+    // Create a new utterance
+    const utterance = new SpeechSynthesisUtterance(text);
+    
+    // Try to use a higher quality voice if available
+    const voices = synthesisRef.current.getVoices();
+    const preferredVoice = voices.find(voice => 
+      voice.name.includes('Google') || 
+      voice.name.includes('Natural') || 
+      voice.name.includes('Female')
+    );
+    
+    if (preferredVoice) {
+      utterance.voice = preferredVoice;
+    }
+
+    // Set properties
+    utterance.rate = 1.0;
+    utterance.pitch = 1.0;
+    utterance.volume = 1.0;
+
+    // Set up event handlers
+    utterance.onstart = () => {
+      setIsSpeaking(true);
+    };
+
+    utterance.onend = () => {
+      setIsSpeaking(false);
+      currentUtteranceRef.current = null;
+    };
+
+    utterance.onerror = (event) => {
+      console.error('Speech synthesis error:', event);
+      setIsSpeaking(false);
+      currentUtteranceRef.current = null;
+    };
+
+    // Store reference and speak
+    currentUtteranceRef.current = utterance;
+    synthesisRef.current.speak(utterance);
+  };
+
   const handleSendMessage = async () => {
     if (!input.trim() || isProcessing) return;
     
@@ -57,6 +135,7 @@ const InterviewPanel = ({
     
     await onSendMessage(input);
     resetTranscript();
+    setInput("");
     
     if (messageInputRef.current) {
       messageInputRef.current.focus();
@@ -145,7 +224,7 @@ const InterviewPanel = ({
             {isSpeaking ? (
               <PauseCircle className="h-5 w-5" />
             ) : (
-              <RotateCcw className="h-5 w-5" />
+              <PlayCircle className="h-5 w-5" />
             )}
           </Button>
           <Button 
@@ -172,13 +251,13 @@ const InterviewPanel = ({
         <div className="relative">
           <textarea
             ref={messageInputRef}
-            value={input}
+            value={listening ? transcript : input}
             onChange={(e) => setInput(e.target.value)}
             onKeyDown={handleKeyDown}
             placeholder={isCompleted ? "This interview is completed" : "Type your answer..."}
             className="w-full px-4 py-3 pr-24 resize-none border rounded-lg focus:outline-none focus:ring-2 focus:ring-primary/50 min-h-[80px] max-h-40"
             rows={2}
-            disabled={isProcessing || isCompleted}
+            disabled={isProcessing || isCompleted || listening}
           />
           <div className="absolute right-2 bottom-2 flex">
             {browserSupportsSpeechRecognition && !isCompleted && (
