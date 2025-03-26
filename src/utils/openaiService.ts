@@ -83,7 +83,7 @@ export async function generateInterviewQuestion(
 ): Promise<string> {
   const systemPrompt = `You are an experienced technical interviewer conducting an interview for a ${role} role. 
   Focus on ${category} questions that are challenging but fair. 
-  ${resumeText ? 'Consider the candidate\\'s background from their resume.' : ''}
+  ${resumeText ? "Consider the candidate's background from their resume." : ""}
   ${customTopics?.length ? 'Focus on these specific topics: ' + customTopics.join(', ') : ''}
   ${isCodingEnabled ? 'Include coding challenges that can be solved in a web-based editor.' : 'Do not include coding challenges that require an editor.'}
   
