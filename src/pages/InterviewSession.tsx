@@ -1,4 +1,3 @@
-
 import React, { useState, useEffect, useRef } from 'react';
 import { useParams, useNavigate } from 'react-router-dom';
 import { useAuth } from '@/context/AuthContext';
@@ -12,12 +11,6 @@ import { Progress } from '@/components/ui/progress';
 import { Maximize, Minimize, ArrowLeft, Clock, CheckSquare } from 'lucide-react';
 import { toast } from 'sonner';
 import { generateInterviewQuestion } from '@/utils/openaiService';
-
-// Fix build error by explicitly defining props for CodeEditor
-interface CodeEditorProps {
-  language: string;
-  readOnly: boolean;
-}
 
 const InterviewSession = () => {
   const { id } = useParams<{ id: string }>();
@@ -57,28 +50,23 @@ const InterviewSession = () => {
         
         setSessionData(data);
         
-        // Calculate time remaining (in seconds)
         if (data.start_time) {
           const startTime = new Date(data.start_time).getTime();
-          const duration = data.time_limit * 60 * 1000; // convert minutes to milliseconds
+          const duration = data.time_limit * 60 * 1000;
           const now = Date.now();
           const endTime = startTime + duration;
           const remaining = Math.max(0, Math.floor((endTime - now) / 1000));
           setTimeRemaining(remaining);
         } else {
-          // If start time isn't set, use the full time limit
           setTimeRemaining(data.time_limit * 60);
         }
         
-        // Set question count
         setQuestionCount(data.current_question_count || 0);
         
-        // Check if the session is completed
         if (data.end_time) {
           setIsCompleted(true);
         }
         
-        // Fetch messages
         const { data: messagesData, error: messagesError } = await supabase
           .from('interview_messages')
           .select('*')
@@ -90,7 +78,6 @@ const InterviewSession = () => {
         if (messagesData.length > 0) {
           setMessages(messagesData);
         } else {
-          // Generate first question if there are no messages
           await generateFirstQuestion(data);
         }
       } catch (error: any) {
@@ -111,13 +98,11 @@ const InterviewSession = () => {
     };
   }, [id, user, navigate]);
   
-  // Set up timer
   useEffect(() => {
     if (timeRemaining > 0 && !isCompleted) {
       timerRef.current = window.setInterval(() => {
         setTimeRemaining(prev => {
           if (prev <= 1) {
-            // Time's up
             endInterview();
             clearInterval(timerRef.current!);
             return 0;
@@ -159,7 +144,6 @@ const InterviewSession = () => {
       
       setMessages([data[0]]);
       
-      // Update question count
       await updateQuestionCount(1);
       setQuestionCount(1);
     } catch (error: any) {
@@ -175,7 +159,6 @@ const InterviewSession = () => {
     
     setIsProcessing(true);
     try {
-      // Insert user message
       const { data: userMessage, error: userError } = await supabase
         .from('interview_messages')
         .insert({
@@ -190,14 +173,11 @@ const InterviewSession = () => {
       setMessages(prev => [...prev, userMessage[0]]);
       setInput('');
       
-      // Extract previous questions to avoid repetition
       const previousQuestions = messages
         .filter(msg => msg.is_bot)
         .map(msg => msg.content);
       
-      // Check if we've reached the question limit
       if (questionCount >= sessionData.questions_limit) {
-        // End the interview if question limit reached
         const { data: finalMessage, error: finalError } = await supabase
           .from('interview_messages')
           .insert({
@@ -214,7 +194,6 @@ const InterviewSession = () => {
         return;
       }
       
-      // Generate AI response
       const aiResponse = await generateInterviewQuestion(
         sessionData.role_type,
         sessionData.category,
@@ -222,7 +201,6 @@ const InterviewSession = () => {
         sessionData.resume_data,
       );
       
-      // Insert AI response
       const { data: botMessage, error: botError } = await supabase
         .from('interview_messages')
         .insert({
@@ -236,7 +214,6 @@ const InterviewSession = () => {
       
       setMessages(prev => [...prev, botMessage[0]]);
       
-      // Update question count
       await updateQuestionCount(questionCount + 1);
       setQuestionCount(prev => prev + 1);
     } catch (error: any) {
@@ -383,7 +360,6 @@ const InterviewSession = () => {
                   />
                 </TabsContent>
                 <TabsContent value="code" className="flex-1 flex">
-                  {/* Fix: Pass props as a valid CodeEditor component props */}
                   <CodeEditor
                     language={sessionData?.language || 'javascript'}
                     readOnly={isCompleted}

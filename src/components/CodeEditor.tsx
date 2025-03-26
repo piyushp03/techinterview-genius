@@ -1,22 +1,14 @@
-
 import { useState, useEffect } from 'react';
 import { Check, Copy, Code, Terminal } from 'lucide-react';
 import { useInterview, ProgrammingLanguage } from '@/context/InterviewContext';
 import { Button } from '@/components/ui/button';
 import { toast } from 'sonner';
 
-const languages = [
-  { id: 'javascript', name: 'JavaScript', extension: 'js' },
-  { id: 'typescript', name: 'TypeScript', extension: 'ts' },
-  { id: 'python', name: 'Python', extension: 'py' },
-  { id: 'java', name: 'Java', extension: 'java' },
-  { id: 'csharp', name: 'C#', extension: 'cs' },
-  { id: 'cpp', name: 'C++', extension: 'cpp' },
-  { id: 'go', name: 'Go', extension: 'go' },
-  { id: 'ruby', name: 'Ruby', extension: 'rb' },
-];
+interface CodeEditorProps {
+  language?: string;
+  readOnly?: boolean;
+}
 
-// Mock language starter templates
 const codeTemplates: Record<string, string> = {
   javascript: `// JavaScript solution
 function solution(input) {
@@ -121,26 +113,40 @@ puts result
 `,
 };
 
-const CodeEditor = () => {
+const languages = [
+  { id: 'javascript', name: 'JavaScript', extension: 'js' },
+  { id: 'typescript', name: 'TypeScript', extension: 'ts' },
+  { id: 'python', name: 'Python', extension: 'py' },
+  { id: 'java', name: 'Java', extension: 'java' },
+  { id: 'csharp', name: 'C#', extension: 'cs' },
+  { id: 'cpp', name: 'C++', extension: 'cpp' },
+  { id: 'go', name: 'Go', extension: 'go' },
+  { id: 'ruby', name: 'Ruby', extension: 'rb' },
+];
+
+const CodeEditor = ({ language: propLanguage, readOnly = false }: CodeEditorProps) => {
   const { selectedLanguage, setLanguage } = useInterview();
   const [code, setCode] = useState('');
   const [output, setOutput] = useState('');
   const [isRunning, setIsRunning] = useState(false);
   const [isCopied, setIsCopied] = useState(false);
+  
+  const effectiveLanguage = propLanguage || selectedLanguage;
 
   useEffect(() => {
-    setCode(codeTemplates[selectedLanguage] || '// Write your code here');
-  }, [selectedLanguage]);
+    setCode(codeTemplates[effectiveLanguage] || '// Write your code here');
+  }, [effectiveLanguage]);
 
   const handleLanguageChange = (language: ProgrammingLanguage) => {
     setLanguage(language);
   };
 
   const handleRunCode = () => {
+    if (readOnly) return;
+    
     setIsRunning(true);
     setOutput('');
     
-    // Simulate code execution with a delay
     setTimeout(() => {
       const outputs = {
         javascript: '6',
@@ -153,7 +159,7 @@ const CodeEditor = () => {
         ruby: '6',
       };
       
-      const mockOutput = `Running ${languages.find(l => l.id === selectedLanguage)?.name || selectedLanguage}...\n\n${outputs[selectedLanguage] || 'Error: Could not run code'}`;
+      const mockOutput = `Running ${languages.find(l => l.id === effectiveLanguage)?.name || effectiveLanguage}...\n\n${outputs[effectiveLanguage] || 'Error: Could not run code'}`;
       setOutput(mockOutput);
       setIsRunning(false);
     }, 1500);
@@ -171,7 +177,7 @@ const CodeEditor = () => {
       });
   };
 
-  const selectedLanguageInfo = languages.find(lang => lang.id === selectedLanguage);
+  const selectedLanguageInfo = languages.find(lang => lang.id === effectiveLanguage);
 
   return (
     <div className="flex flex-col h-full glass-card overflow-hidden">
@@ -185,29 +191,31 @@ const CodeEditor = () => {
         </div>
         
         <div className="flex items-center space-x-1">
-          <div className="relative group">
-            <Button variant="ghost" size="sm" className="text-xs">
-              {selectedLanguageInfo?.name || 'Language'} <span className="ml-1 opacity-60">▼</span>
-            </Button>
-            
-            <div className="absolute right-0 mt-1 w-40 opacity-0 invisible group-hover:opacity-100 group-hover:visible transition-all duration-300 ease-in-out z-10">
-              <div className="py-1 bg-popover border rounded-md shadow-lg">
-                {languages.map((lang) => (
-                  <button
-                    key={lang.id}
-                    onClick={() => handleLanguageChange(lang.id as ProgrammingLanguage)}
-                    className={`block w-full text-left px-4 py-1.5 text-xs ${
-                      selectedLanguage === lang.id
-                        ? 'bg-primary/10 text-primary font-medium'
-                        : 'hover:bg-accent'
-                    }`}
-                  >
-                    {lang.name}
-                  </button>
-                ))}
+          {!readOnly && (
+            <div className="relative group">
+              <Button variant="ghost" size="sm" className="text-xs">
+                {selectedLanguageInfo?.name || 'Language'} <span className="ml-1 opacity-60">▼</span>
+              </Button>
+              
+              <div className="absolute right-0 mt-1 w-40 opacity-0 invisible group-hover:opacity-100 group-hover:visible transition-all duration-300 ease-in-out z-10">
+                <div className="py-1 bg-popover border rounded-md shadow-lg">
+                  {languages.map((lang) => (
+                    <button
+                      key={lang.id}
+                      onClick={() => handleLanguageChange(lang.id as ProgrammingLanguage)}
+                      className={`block w-full text-left px-4 py-1.5 text-xs ${
+                        effectiveLanguage === lang.id
+                          ? 'bg-primary/10 text-primary font-medium'
+                          : 'hover:bg-accent'
+                      }`}
+                    >
+                      {lang.name}
+                    </button>
+                  ))}
+                </div>
               </div>
             </div>
-          </div>
+          )}
         </div>
       </div>
       
@@ -215,9 +223,10 @@ const CodeEditor = () => {
         <div className="flex-1 relative">
           <textarea
             value={code}
-            onChange={(e) => setCode(e.target.value)}
+            onChange={(e) => !readOnly && setCode(e.target.value)}
             className="w-full h-full p-4 bg-black text-green-400 font-mono text-sm focus:outline-none resize-none"
             spellCheck="false"
+            readOnly={readOnly}
           />
           <Button
             variant="ghost"
@@ -238,7 +247,7 @@ const CodeEditor = () => {
             <Button
               size="sm"
               onClick={handleRunCode}
-              disabled={isRunning}
+              disabled={isRunning || readOnly}
               className="bg-green-600 hover:bg-green-700 text-white py-1 px-3 text-xs h-7 rounded"
             >
               {isRunning ? 'Running...' : 'Run Code'}

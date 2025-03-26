@@ -14,6 +14,7 @@ import Auth from "./pages/Auth";
 import Dashboard from "./pages/Dashboard";
 import NewInterview from "./pages/NewInterview";
 import InterviewSession from "./pages/InterviewSession";
+import InterviewResultsPage from "./pages/InterviewResultsPage";
 import Questions from "./pages/Questions";
 import Resume from "./pages/Resume";
 import History from "./pages/History";
@@ -49,6 +50,11 @@ const App = () => (
               <Route path="/interview/:id" element={
                 <ProtectedRoute>
                   <InterviewSession />
+                </ProtectedRoute>
+              } />
+              <Route path="/interview/results/:id" element={
+                <ProtectedRoute>
+                  <InterviewResultsPage />
                 </ProtectedRoute>
               } />
               <Route path="/questions" element={
