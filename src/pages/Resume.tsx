@@ -1,294 +1,335 @@
 
-import { useState } from 'react';
+import { useState, useRef } from 'react';
+import { useNavigate } from 'react-router-dom';
 import { useAuth } from '@/context/AuthContext';
 import Navbar from '@/components/Navbar';
-import ResumeUploader from '@/components/ResumeUploader';
-import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card';
 import { Button } from '@/components/ui/button';
-import { FileText, Check, AlertTriangle, RefreshCw, PieChart } from 'lucide-react';
-import { analyzeResume } from '@/utils/openaiService';
-import { supabase } from '@/integrations/supabase/client';
-import { PieChart as RechartsPieChart, Pie, Cell, ResponsiveContainer, Legend, Tooltip } from 'recharts';
-import { ChartContainer } from '@/components/ui/chart';
+import { Card, CardContent, CardDescription, CardFooter, CardHeader, CardTitle } from '@/components/ui/card';
+import { FileUploader } from '@/components/ResumeUploader';
+import { Textarea } from '@/components/ui/textarea';
+import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs';
+import { ScrollArea } from '@/components/ui/scroll-area';
+import { Loader2, FileUp, CheckCircle, AlertCircle, FileText, RefreshCw } from 'lucide-react';
+import { extractTextFromResume, analyzeResume } from '@/utils/openaiService';
 import { toast } from 'sonner';
 
 const Resume = () => {
   const { user } = useAuth();
+  const navigate = useNavigate();
+  const [activeTab, setActiveTab] = useState('upload');
   const [resumeText, setResumeText] = useState('');
+  const [isUploading, setIsUploading] = useState(false);
+  const [isExtracting, setIsExtracting] = useState(false);
   const [isAnalyzing, setIsAnalyzing] = useState(false);
-  const [analysisResult, setAnalysisResult] = useState<any>(null);
+  const [analysis, setAnalysis] = useState('');
+  const [uploadedFile, setUploadedFile] = useState<File | null>(null);
+  const textareaRef = useRef<HTMLTextAreaElement>(null);
 
-  const handleResumeUpload = (text: string) => {
-    setResumeText(text);
-    setAnalysisResult(null);
-  };
-
-  const analyzeResumeText = async () => {
-    if (!resumeText) return;
+  const handleUpload = async (files: File[]) => {
+    if (files.length === 0) return;
     
-    setIsAnalyzing(true);
+    setIsUploading(true);
+    setUploadedFile(files[0]);
     
     try {
-      // Use the OpenAI API to analyze the resume
-      const result = await analyzeResume(resumeText);
-      setAnalysisResult(result);
-      
-      // Save the analysis to Supabase if user is logged in
-      if (user) {
-        await supabase.from('resume_analysis').upsert({
-          user_id: user.id,
-          resume_text: resumeText,
-          analysis_result: result,
-          created_at: new Date().toISOString()
-        });
+      // If it's a PDF, extract text
+      if (files[0].type === 'application/pdf') {
+        setIsExtracting(true);
+        
+        // Read the file as base64
+        const reader = new FileReader();
+        reader.readAsDataURL(files[0]);
+        
+        reader.onload = async () => {
+          try {
+            const base64data = reader.result?.toString().split(',')[1];
+            if (!base64data) {
+              throw new Error('Failed to read PDF file');
+            }
+            
+            // Extract text from PDF using OpenAI
+            const extractedText = await extractTextFromResume(base64data);
+            setResumeText(extractedText);
+            setActiveTab('edit');
+            toast.success('Successfully extracted text from PDF');
+          } catch (error) {
+            console.error('Error extracting text from PDF:', error);
+            toast.error('Failed to extract text from PDF. Please try again or paste your resume manually.');
+          } finally {
+            setIsExtracting(false);
+          }
+        };
+        
+        reader.onerror = () => {
+          toast.error('Failed to read the PDF file');
+          setIsExtracting(false);
+        };
+      } else if (files[0].type === 'text/plain') {
+        // If it's a text file, read it directly
+        const reader = new FileReader();
+        reader.readAsText(files[0]);
+        
+        reader.onload = () => {
+          setResumeText(reader.result as string);
+          setActiveTab('edit');
+          toast.success('Successfully loaded text file');
+        };
+        
+        reader.onerror = () => {
+          toast.error('Failed to read the text file');
+        };
+      } else {
+        toast.error('Unsupported file type. Please upload a PDF or text file.');
       }
     } catch (error) {
-      console.error('Resume analysis error:', error);
+      console.error('Error processing file:', error);
+      toast.error('Failed to process file');
+    } finally {
+      setIsUploading(false);
+    }
+  };
+
+  const handleAnalyze = async () => {
+    if (!resumeText.trim()) {
+      toast.error('Please enter or upload your resume first');
+      return;
+    }
+    
+    setIsAnalyzing(true);
+    setAnalysis('');
+    
+    try {
+      const analysisResult = await analyzeResume(resumeText);
+      setAnalysis(analysisResult);
+      setActiveTab('analysis');
+      toast.success('Resume analysis complete');
+    } catch (error) {
+      console.error('Error analyzing resume:', error);
       toast.error('Failed to analyze resume');
     } finally {
       setIsAnalyzing(false);
     }
   };
 
-  const resetAnalysis = () => {
+  const resetAll = () => {
     setResumeText('');
-    setAnalysisResult(null);
+    setAnalysis('');
+    setUploadedFile(null);
+    setActiveTab('upload');
   };
 
-  const renderAnalysisScore = () => {
-    const score = analysisResult?.score || 0;
-    let color = 'text-red-500';
-    let icon = <AlertTriangle className="h-5 w-5" />;
-    
-    if (score >= 70) {
-      color = 'text-green-500';
-      icon = <Check className="h-5 w-5" />;
-    } else if (score >= 50) {
-      color = 'text-amber-500';
-      icon = <AlertTriangle className="h-5 w-5" />;
-    }
-    
+  if (!user) {
     return (
-      <div className={`flex items-center gap-2 ${color} text-2xl font-bold`}>
-        {icon}
-        {score}/100
+      <div className="flex h-screen w-full items-center justify-center">
+        <div className="text-center">
+          <h2 className="text-2xl font-bold mb-4">Authentication Required</h2>
+          <p className="mb-4">Please sign in to access this feature.</p>
+          <Button onClick={() => navigate('/auth')}>Sign In</Button>
+        </div>
       </div>
     );
-  };
-
-  const COLORS = ['#4f46e5', '#10b981', '#f59e0b', '#ef4444'];
-  
-  const getSkillsChartData = () => {
-    if (!analysisResult) return [];
-    
-    // Hypothetical skill scores based on the analysis
-    return [
-      { name: 'Technical', value: calculateSkillScore('technical') },
-      { name: 'Communication', value: calculateSkillScore('communication') },
-      { name: 'Leadership', value: calculateSkillScore('leadership') },
-      { name: 'Problem Solving', value: calculateSkillScore('problem-solving') }
-    ];
-  };
-  
-  const calculateSkillScore = (skillType: string) => {
-    // This is a simplistic way to extract skill scores from the analysis
-    // In a real implementation, the AI would provide these scores directly
-    const strengths = analysisResult.strengths.join(' ').toLowerCase();
-    const weaknesses = analysisResult.weaknesses.join(' ').toLowerCase();
-    
-    let baseScore = 70; // Start with a neutral score
-    
-    const keywords: Record<string, string[]> = {
-      'technical': ['technical', 'skills', 'programming', 'development', 'coding', 'software', 'engineering'],
-      'communication': ['communication', 'writing', 'presenting', 'detail', 'clarity', 'articulate'],
-      'leadership': ['leadership', 'management', 'team', 'initiative', 'leading', 'directing'],
-      'problem-solving': ['problem', 'solving', 'analytical', 'solution', 'approach', 'critical']
-    };
-    
-    // Increase score for strengths that match this skill
-    keywords[skillType].forEach(keyword => {
-      if (strengths.includes(keyword)) baseScore += 5;
-    });
-    
-    // Decrease score for weaknesses that match this skill
-    keywords[skillType].forEach(keyword => {
-      if (weaknesses.includes(keyword)) baseScore -= 5;
-    });
-    
-    // Ensure the score stays within 0-100
-    return Math.min(100, Math.max(0, baseScore));
-  };
+  }
 
   return (
     <div className="min-h-screen bg-background flex flex-col">
       <Navbar />
       <main className="flex-1 container py-8 px-4 md:px-6">
-        <h1 className="text-3xl font-bold mb-6">Resume Analysis</h1>
+        <h1 className="text-3xl font-bold mb-2">Resume Analysis</h1>
+        <p className="text-muted-foreground mb-8">
+          Get AI-powered analysis and feedback on your resume to improve your job applications
+        </p>
         
-        {!resumeText ? (
-          <div className="max-w-2xl mx-auto">
-            <Card>
-              <CardHeader>
-                <CardTitle>Upload Your Resume</CardTitle>
-                <CardDescription>
-                  Our AI will analyze your resume and provide feedback to help you improve it
-                </CardDescription>
-              </CardHeader>
-              <CardContent>
-                <ResumeUploader onResumeProcessed={handleResumeUpload} />
-              </CardContent>
-            </Card>
-          </div>
-        ) : !analysisResult ? (
-          <div className="max-w-3xl mx-auto">
-            <Card>
-              <CardHeader>
-                <CardTitle className="flex justify-between">
-                  <span>Resume Uploaded Successfully</span>
-                  <FileText className="h-6 w-6 text-green-500" />
-                </CardTitle>
-                <CardDescription>
-                  Your resume has been uploaded and is ready for analysis
-                </CardDescription>
-              </CardHeader>
-              <CardContent>
-                <div className="border rounded-md p-4 mb-6 max-h-64 overflow-y-auto">
-                  <pre className="whitespace-pre-wrap text-sm">{resumeText}</pre>
-                </div>
-                
-                <div className="flex justify-between">
-                  <Button variant="outline" onClick={resetAnalysis}>
-                    Upload a Different Resume
+        <div className="grid gap-6 lg:grid-cols-[1fr_400px]">
+          <Tabs value={activeTab} onValueChange={setActiveTab} className="w-full">
+            <TabsList className="grid w-full grid-cols-3">
+              <TabsTrigger value="upload">Upload</TabsTrigger>
+              <TabsTrigger value="edit">Edit</TabsTrigger>
+              <TabsTrigger value="analysis" disabled={!analysis}>Analysis</TabsTrigger>
+            </TabsList>
+            
+            <TabsContent value="upload" className="mt-6">
+              <Card>
+                <CardHeader>
+                  <CardTitle>Upload Your Resume</CardTitle>
+                  <CardDescription>
+                    Upload your resume in PDF or text format for AI analysis
+                  </CardDescription>
+                </CardHeader>
+                <CardContent>
+                  {isUploading || isExtracting ? (
+                    <div className="flex flex-col items-center justify-center p-12">
+                      <Loader2 className="h-10 w-10 animate-spin text-primary mb-4" />
+                      <p className="text-center text-muted-foreground">
+                        {isExtracting ? 'Extracting text from PDF...' : 'Uploading file...'}
+                      </p>
+                    </div>
+                  ) : uploadedFile ? (
+                    <div className="border rounded-lg p-4 flex items-center justify-between">
+                      <div className="flex items-center">
+                        <FileText className="h-8 w-8 text-blue-500 mr-3" />
+                        <div>
+                          <p className="font-medium">{uploadedFile.name}</p>
+                          <p className="text-sm text-muted-foreground">
+                            {(uploadedFile.size / 1024).toFixed(1)} KB
+                          </p>
+                        </div>
+                      </div>
+                      <CheckCircle className="h-5 w-5 text-green-500" />
+                    </div>
+                  ) : (
+                    <FileUploader
+                      onUpload={handleUpload}
+                      acceptedFileTypes={{
+                        'application/pdf': ['.pdf'],
+                        'text/plain': ['.txt']
+                      }}
+                      maxSize={5 * 1024 * 1024} // 5MB
+                    />
+                  )}
+                </CardContent>
+                <CardFooter className="flex flex-col space-y-2">
+                  <p className="text-sm text-muted-foreground mb-2 w-full">
+                    <AlertCircle className="h-4 w-4 inline mr-1" />
+                    Your resume is only used for analysis and is not stored permanently
+                  </p>
+                  <div className="flex w-full justify-between">
+                    <Button variant="outline" onClick={resetAll} disabled={isUploading || isExtracting}>
+                      Clear
+                    </Button>
+                    <Button onClick={() => setActiveTab('edit')} disabled={isUploading || isExtracting}>
+                      Continue to Editor
+                    </Button>
+                  </div>
+                </CardFooter>
+              </Card>
+            </TabsContent>
+            
+            <TabsContent value="edit" className="mt-6">
+              <Card className="h-full flex flex-col">
+                <CardHeader>
+                  <CardTitle>Edit Your Resume Text</CardTitle>
+                  <CardDescription>
+                    Review and edit the extracted text before analysis
+                  </CardDescription>
+                </CardHeader>
+                <CardContent className="flex-1">
+                  <Textarea
+                    ref={textareaRef}
+                    value={resumeText}
+                    onChange={(e) => setResumeText(e.target.value)}
+                    placeholder="Paste or edit your resume text here..."
+                    className="min-h-[400px] font-mono text-sm"
+                  />
+                </CardContent>
+                <CardFooter className="flex justify-between">
+                  <Button variant="outline" onClick={() => setActiveTab('upload')}>
+                    Back
                   </Button>
-                  <Button 
-                    onClick={analyzeResumeText} 
-                    disabled={isAnalyzing}
-                    className="gap-2"
-                  >
+                  <Button onClick={handleAnalyze} disabled={isAnalyzing || !resumeText.trim()}>
                     {isAnalyzing ? (
                       <>
-                        <RefreshCw className="h-4 w-4 animate-spin" />
+                        <Loader2 className="mr-2 h-4 w-4 animate-spin" />
                         Analyzing...
                       </>
                     ) : (
-                      'Analyze Resume'
+                      <>
+                        <FileUp className="mr-2 h-4 w-4" />
+                        Analyze Resume
+                      </>
                     )}
                   </Button>
-                </div>
-              </CardContent>
-            </Card>
-          </div>
-        ) : (
-          <div className="grid md:grid-cols-2 gap-6">
+                </CardFooter>
+              </Card>
+            </TabsContent>
+            
+            <TabsContent value="analysis" className="mt-6">
+              <Card className="h-full flex flex-col">
+                <CardHeader>
+                  <CardTitle>Resume Analysis Results</CardTitle>
+                  <CardDescription>
+                    AI-powered feedback and improvement suggestions
+                  </CardDescription>
+                </CardHeader>
+                <CardContent className="flex-1">
+                  <ScrollArea className="h-[500px] rounded-md border p-4">
+                    <div className="space-y-4">
+                      {analysis.split('\n').map((paragraph, index) => (
+                        <p key={index} className={paragraph.startsWith('#') ? 'font-bold text-lg mt-4' : ''}>
+                          {paragraph}
+                        </p>
+                      ))}
+                    </div>
+                  </ScrollArea>
+                </CardContent>
+                <CardFooter className="flex justify-between">
+                  <Button variant="outline" onClick={() => setActiveTab('edit')}>
+                    Edit Resume
+                  </Button>
+                  <Button onClick={resetAll}>
+                    <RefreshCw className="mr-2 h-4 w-4" />
+                    Start New Analysis
+                  </Button>
+                </CardFooter>
+              </Card>
+            </TabsContent>
+          </Tabs>
+          
+          <div className="space-y-6">
             <Card>
               <CardHeader>
-                <CardTitle>Resume Content</CardTitle>
-                <CardDescription>
-                  The text extracted from your resume
-                </CardDescription>
+                <CardTitle>How It Works</CardTitle>
               </CardHeader>
               <CardContent>
-                <div className="border rounded-md p-4 max-h-[500px] overflow-y-auto">
-                  <pre className="whitespace-pre-wrap text-sm">{resumeText}</pre>
-                </div>
-                
-                <div className="mt-6">
-                  <Button variant="outline" onClick={resetAnalysis}>
-                    Upload a Different Resume
-                  </Button>
-                </div>
+                <ol className="space-y-4">
+                  <li className="flex items-start space-x-3">
+                    <div className="bg-primary/10 rounded-full flex items-center justify-center w-6 h-6 mt-0.5 flex-shrink-0">
+                      <span className="text-primary text-sm font-medium">1</span>
+                    </div>
+                    <div>
+                      <h4 className="font-medium">Upload Your Resume</h4>
+                      <p className="text-sm text-muted-foreground">Upload your resume in PDF or text format</p>
+                    </div>
+                  </li>
+                  <li className="flex items-start space-x-3">
+                    <div className="bg-primary/10 rounded-full flex items-center justify-center w-6 h-6 mt-0.5 flex-shrink-0">
+                      <span className="text-primary text-sm font-medium">2</span>
+                    </div>
+                    <div>
+                      <h4 className="font-medium">Edit and Review</h4>
+                      <p className="text-sm text-muted-foreground">Verify the extracted text or make edits if needed</p>
+                    </div>
+                  </li>
+                  <li className="flex items-start space-x-3">
+                    <div className="bg-primary/10 rounded-full flex items-center justify-center w-6 h-6 mt-0.5 flex-shrink-0">
+                      <span className="text-primary text-sm font-medium">3</span>
+                    </div>
+                    <div>
+                      <h4 className="font-medium">Get AI Analysis</h4>
+                      <p className="text-sm text-muted-foreground">Receive detailed feedback and improvement suggestions</p>
+                    </div>
+                  </li>
+                </ol>
               </CardContent>
             </Card>
             
-            <div className="space-y-6">
-              <Card>
-                <CardHeader>
-                  <CardTitle className="flex justify-between items-center">
-                    <span>Resume Score</span>
-                    {renderAnalysisScore()}
-                  </CardTitle>
-                  <CardDescription>
-                    Overall assessment of your resume
-                  </CardDescription>
-                </CardHeader>
-                <CardContent className="h-52">
-                  <ChartContainer config={{
-                    Technical: { color: '#4f46e5' },
-                    Communication: { color: '#10b981' },
-                    Leadership: { color: '#f59e0b' },
-                    'Problem Solving': { color: '#ef4444' }
-                  }}>
-                    <ResponsiveContainer width="100%" height="100%">
-                      <RechartsPieChart>
-                        <Pie
-                          data={getSkillsChartData()}
-                          cx="50%"
-                          cy="50%"
-                          innerRadius={60}
-                          outerRadius={80}
-                          fill="#8884d8"
-                          paddingAngle={5}
-                          dataKey="value"
-                          label={({ name, percent }) => `${name}: ${(percent * 100).toFixed(0)}%`}
-                        >
-                          {getSkillsChartData().map((entry, index) => (
-                            <Cell key={`cell-${index}`} fill={COLORS[index % COLORS.length]} />
-                          ))}
-                        </Pie>
-                        <Tooltip />
-                      </RechartsPieChart>
-                    </ResponsiveContainer>
-                  </ChartContainer>
-                </CardContent>
-              </Card>
-              
-              <Card>
-                <CardHeader>
-                  <CardTitle>Strengths</CardTitle>
-                </CardHeader>
-                <CardContent>
-                  <ul className="space-y-2">
-                    {analysisResult.strengths.map((strength: string, i: number) => (
-                      <li key={i} className="flex gap-2">
-                        <Check className="h-5 w-5 text-green-500 shrink-0" />
-                        <span>{strength}</span>
-                      </li>
-                    ))}
-                  </ul>
-                </CardContent>
-              </Card>
-              
-              <Card>
-                <CardHeader>
-                  <CardTitle>Areas for Improvement</CardTitle>
-                </CardHeader>
-                <CardContent>
-                  <ul className="space-y-2">
-                    {analysisResult.weaknesses.map((weakness: string, i: number) => (
-                      <li key={i} className="flex gap-2">
-                        <AlertTriangle className="h-5 w-5 text-amber-500 shrink-0" />
-                        <span>{weakness}</span>
-                      </li>
-                    ))}
-                  </ul>
-                </CardContent>
-              </Card>
-              
-              <Card>
-                <CardHeader>
-                  <CardTitle>Suggestions</CardTitle>
-                </CardHeader>
-                <CardContent>
-                  <ul className="list-disc pl-5 space-y-1">
-                    {analysisResult.suggestions.map((suggestion: string, i: number) => (
-                      <li key={i}>{suggestion}</li>
-                    ))}
-                  </ul>
-                </CardContent>
-              </Card>
-            </div>
+            <Card>
+              <CardHeader>
+                <CardTitle>Resume Tips</CardTitle>
+              </CardHeader>
+              <CardContent>
+                <ul className="space-y-2">
+                  <li className="text-sm">• Use action verbs to describe your experience</li>
+                  <li className="text-sm">• Quantify your achievements with numbers</li>
+                  <li className="text-sm">• Tailor your resume to each job application</li>
+                  <li className="text-sm">• Keep formatting consistent and clean</li>
+                  <li className="text-sm">• Proofread carefully for errors</li>
+                  <li className="text-sm">• Highlight relevant skills and experience</li>
+                  <li className="text-sm">• Use industry-specific keywords</li>
+                </ul>
+              </CardContent>
+            </Card>
           </div>
-        )}
+        </div>
       </main>
     </div>
   );

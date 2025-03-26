@@ -535,3 +535,95 @@ export async function analyzeResume(resumeText: string): Promise<{
     };
   }
 }
+
+export const extractTextFromResume = async (pdfBase64: string) => {
+  try {
+    const response = await fetch('https://api.openai.com/v1/chat/completions', {
+      method: 'POST',
+      headers: {
+        'Authorization': `Bearer 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`,
+        'Content-Type': 'application/json'
+      },
+      body: JSON.stringify({
+        model: 'gpt-4o',
+        messages: [
+          {
+            role: 'system',
+            content: 'You are an expert at extracting text from resume PDFs. Extract all the relevant information from this resume in a well-structured format. Include name, contact details, work experience, education, skills, projects, certifications, and any other relevant sections.'
+          },
+          {
+            role: 'user',
+            content: [
+              {
+                type: 'text',
+                text: 'Extract the complete text from this resume PDF. Format it in a well-structured way that preserves sections and important information.'
+              },
+              {
+                type: 'image_url',
+                image_url: {
+                  url: `data:application/pdf;base64,${pdfBase64}`
+                }
+              }
+            ]
+          }
+        ],
+        max_tokens: 4000
+      })
+    });
+
+    if (!response.ok) {
+      throw new Error('Failed to extract text from resume');
+    }
+
+    const data = await response.json();
+    return data.choices[0].message.content;
+  } catch (error) {
+    console.error('Error extracting text from resume:', error);
+    throw error;
+  }
+};
+
+export const analyzeResume = async (resumeText: string) => {
+  try {
+    const response = await fetch('https://api.openai.com/v1/chat/completions', {
+      method: 'POST',
+      headers: {
+        'Authorization': `Bearer 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`,
+        'Content-Type': 'application/json'
+      },
+      body: JSON.stringify({
+        model: 'gpt-4o-mini',
+        messages: [
+          {
+            role: 'system',
+            content: 'You are a professional resume reviewer who provides detailed, constructive feedback on resumes. Your analysis should be thorough, specific, and actionable.'
+          },
+          {
+            role: 'user',
+            content: `Please analyze this resume and provide detailed feedback. Include: 
+            1. An overall score out of 100 
+            2. Key strengths 
+            3. Areas for improvement 
+            4. Section-by-section review (format, content, impact) 
+            5. Suggested edits and additions 
+            6. Industry-specific advice
+            
+            Resume text:
+            ${resumeText}`
+          }
+        ],
+        temperature: 0.7
+      })
+    });
+
+    if (!response.ok) {
+      throw new Error('Failed to analyze resume');
+    }
+
+    const data = await response.json();
+    return data.choices[0].message.content;
+  } catch (error) {
+    console.error('Error analyzing resume:', error);
+    throw error;
+  }
+};

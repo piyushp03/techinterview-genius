@@ -84,6 +84,35 @@ export type Database = {
         }
         Relationships: []
       }
+      interview_analysis: {
+        Row: {
+          created_at: string
+          id: string
+          session_id: string
+          summary: Json
+        }
+        Insert: {
+          created_at?: string
+          id?: string
+          session_id: string
+          summary: Json
+        }
+        Update: {
+          created_at?: string
+          id?: string
+          session_id?: string
+          summary?: Json
+        }
+        Relationships: [
+          {
+            foreignKeyName: "interview_analysis_session_id_fkey"
+            columns: ["session_id"]
+            isOneToOne: false
+            referencedRelation: "interview_sessions"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
       interview_messages: {
         Row: {
           content: string

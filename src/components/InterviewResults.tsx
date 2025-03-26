@@ -60,7 +60,7 @@ const InterviewResults = ({ sessionId }: { sessionId: string }) => {
         .single();
       
       if (!analysisError && existingAnalysis) {
-        setAnalysisSummary(existingAnalysis);
+        setAnalysisSummary(existingAnalysis.summary);
         setAnalysisComplete(true);
       } else if (sessionData.end_time) {
         // Only analyze completed interviews
@@ -92,7 +92,48 @@ const InterviewResults = ({ sessionId }: { sessionId: string }) => {
         }
       }
       
-      // Analyze each answer (limited to avoid rate limiting)
+      // Voice interviews might not have a strict Q&A pair structure
+      // So handle them separately
+      if (session.category === 'voice-interview') {
+        const aiMessages = messages.filter(m => m.is_bot);
+        const userMessages = messages.filter(m => !m.is_bot);
+        
+        // Skip welcome message
+        for (let i = 1; i < aiMessages.length && i-1 < userMessages.length; i++) {
+          pairs.push({
+            question: aiMessages[i].content,
+            answer: userMessages[i-1].content
+          });
+        }
+      }
+      
+      // If no pairs found, try another approach for voice interviews
+      if (pairs.length === 0 && session.category === 'voice-interview') {
+        let currentQuestion = '';
+        for (let i = 0; i < messages.length; i++) {
+          if (messages[i].is_bot) {
+            currentQuestion = messages[i].content;
+          } else if (currentQuestion && !messages[i].is_bot) {
+            pairs.push({
+              question: currentQuestion,
+              answer: messages[i].content
+            });
+            currentQuestion = '';
+          }
+        }
+      }
+      
+      if (pairs.length === 0) {
+        throw new Error('No question-answer pairs found to analyze');
+      }
+      
+      // For voice interviews, use GPT-4 to analyze the entire conversation at once
+      if (session.category === 'voice-interview') {
+        await analyzeVoiceInterview(session, pairs);
+        return;
+      }
+      
+      // For regular interviews, analyze each answer
       const analysisResults = [];
       let totalScore = 0;
       
@@ -155,6 +196,80 @@ const InterviewResults = ({ sessionId }: { sessionId: string }) => {
       toast.error('Failed to analyze interview');
     } finally {
       setAnalyzing(false);
+    }
+  };
+  
+  const analyzeVoiceInterview = async (session: any, pairs: any[]) => {
+    try {
+      // Use GPT-4o-mini to analyze the entire conversation
+      const response = await fetch('https://api.openai.com/v1/chat/completions', {
+        method: 'POST',
+        headers: {
+          'Authorization': `Bearer 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`,
+          'Content-Type': 'application/json'
+        },
+        body: JSON.stringify({
+          model: 'gpt-4o-mini',
+          messages: [
+            {
+              role: 'system',
+              content: `You are an expert at evaluating technical interview responses. Analyze the following interview Q&A pairs and provide a detailed assessment with:
+              1. An overall score out of 10
+              2. The key strengths demonstrated
+              3. Areas for improvement
+              4. Specific feedback for each question-answer pair
+              Format your response as a JSON object with these keys: average_score, strengths_summary (array of strings), improvement_summary (array of strings), and question_analysis (array of objects with question, answer, feedback, score, strengths, areas_for_improvement)`
+            },
+            {
+              role: 'user',
+              content: JSON.stringify(pairs)
+            }
+          ],
+          temperature: 0.7,
+          response_format: { type: "json_object" }
+        })
+      });
+      
+      if (!response.ok) {
+        throw new Error('Failed to generate analysis');
+      }
+      
+      const data = await response.json();
+      const analysis = JSON.parse(data.choices[0].message.content);
+      
+      // Prepare summary data
+      const summary = {
+        session_id: sessionId,
+        average_score: analysis.average_score,
+        answered_questions: pairs.length,
+        total_questions: pairs.length + 1, // Including last unanswered question
+        time_spent: session.time_limit - Math.floor((new Date(session.end_time).getTime() - new Date(session.start_time).getTime()) / 60000),
+        question_analysis: analysis.question_analysis,
+        strengths_summary: analysis.strengths_summary.map((item: string, index: number) => ({ 
+          name: item, 
+          value: 5 - (index * 0.5) // Give higher values to earlier items
+        })),
+        improvement_summary: analysis.improvement_summary.map((item: string, index: number) => ({ 
+          name: item, 
+          value: 5 - (index * 0.5) // Give higher values to earlier items
+        })),
+      };
+      
+      // Save analysis to database
+      await supabase
+        .from('interview_analysis')
+        .upsert({
+          session_id: sessionId,
+          summary: summary,
+          created_at: new Date().toISOString()
+        });
+      
+      setAnalysisSummary(summary);
+      setAnalysisComplete(true);
+      toast.success('Voice interview analysis complete');
+    } catch (error: any) {
+      console.error('Error analyzing voice interview:', error);
+      toast.error('Failed to analyze voice interview');
     }
   };
 
