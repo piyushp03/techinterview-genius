@@ -5,7 +5,7 @@ import { useAuth } from '@/context/AuthContext';
 import { Card, CardContent, CardDescription, CardFooter, CardHeader, CardTitle } from '@/components/ui/card';
 import { Button } from '@/components/ui/button';
 import Navbar from '@/components/Navbar';
-import { Brain, MessageSquare, FileText, History, Settings } from 'lucide-react';
+import { Brain, MessageSquare, FileText, History, Settings, Mic } from 'lucide-react';
 
 const Dashboard = () => {
   const { isAuthenticated, isLoading, user } = useAuth();
@@ -31,6 +31,12 @@ const Dashboard = () => {
       description: 'Start a new mock interview with AI',
       icon: <Brain className="h-10 w-10 text-primary" />,
       action: () => navigate('/interview/new'),
+    },
+    {
+      title: 'AI Voice Interviewer',
+      description: 'Practice with voice-based AI interviewer',
+      icon: <Mic className="h-10 w-10 text-purple-500" />,
+      action: () => navigate('/ai-interviewer'),
     },
     {
       title: 'Custom Questions',

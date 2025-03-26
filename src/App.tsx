@@ -20,6 +20,7 @@ import Resume from "./pages/Resume";
 import History from "./pages/History";
 import Profile from "./pages/Profile";
 import NotFound from "./pages/NotFound";
+import AIInterviewer from "./pages/AIInterviewer";
 
 const queryClient = new QueryClient();
 
@@ -60,6 +61,11 @@ const App = () => (
               <Route path="/questions" element={
                 <ProtectedRoute>
                   <Questions />
+                </ProtectedRoute>
+              } />
+              <Route path="/ai-interviewer" element={
+                <ProtectedRoute>
+                  <AIInterviewer />
                 </ProtectedRoute>
               } />
               <Route path="/resume" element={
