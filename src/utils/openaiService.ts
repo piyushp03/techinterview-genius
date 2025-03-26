@@ -4,7 +4,7 @@ import { toast } from 'sonner';
 const OPENAI_API_KEY = "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";
 
 // Types
-type ChatMessage = {
+export type ChatMessage = {
   role: 'system' | 'user' | 'assistant';
   content: string;
 };
@@ -82,7 +82,7 @@ export async function generateInterviewQuestion(
 ): Promise<string> {
   const systemPrompt = `You are an experienced technical interviewer conducting an interview for a ${role} role. 
   Focus on ${category} questions that are challenging but fair. 
-  ${resumeText ? 'Consider the candidate\'s background from their resume.' : ''}
+  ${resumeText ? 'Consider the candidate\\'s background from their resume.' : ''}
   ${customTopics?.length ? 'Focus on these specific topics: ' + customTopics.join(', ') : ''}
   ${isCodingEnabled ? 'Include coding challenges that can be solved in a web-based editor.' : 'Do not include coding challenges that require an editor.'}
   
@@ -342,21 +342,7 @@ export async function evaluateCodingSolution(
     { role: 'system', content: systemPrompt },
     {
       role: 'user',
-      content: `
-Problem: ${question}
-
-Candidate's Solution (${language}):
-\`\`\`
-${userCode}
-\`\`\`
-
-Expected Solution:
-\`\`\`
-${expectedSolution}
-\`\`\`
-
-Evaluate if the solution is correct. Provide specific feedback and optimization tips.
-      `,
+      content: `\nProblem: ${question}\n\nCandidate's Solution (${language}):\n\`\`\`\n${userCode}\n\`\`\`\n\nExpected Solution:\n\`\`\`\n${expectedSolution}\n\`\`\`\n\nEvaluate if the solution is correct. Provide specific feedback and optimization tips.\n      `,
     },
   ];
 
@@ -474,9 +460,18 @@ export const extractTextFromResume = async (pdfBase64: string) => {
 };
 
 /**
- * Analyze resume and provide detailed feedback
+ * Analyze resume and provide feedback
  */
-export const analyzeResume = async (resumeText: string) => {
+export interface ResumeAnalysisResult {
+  analysisText: string;
+  strengths: string[];
+  weaknesses: string[];
+  suggestions: string[];
+  jobFit: 'low' | 'medium' | 'high';
+  score: number;
+}
+
+export async function analyzeResume(resumeText: string): Promise<ResumeAnalysisResult> {
   try {
     const response = await fetch('https://api.openai.com/v1/chat/completions', {
       method: 'POST',
@@ -495,11 +490,17 @@ export const analyzeResume = async (resumeText: string) => {
             role: 'user',
             content: `Please analyze this resume and provide detailed feedback. Include: 
             1. An overall score out of 100 
-            2. Key strengths 
-            3. Areas for improvement 
-            4. Section-by-section review (format, content, impact) 
-            5. Suggested edits and additions 
-            6. Industry-specific advice
+            2. Key strengths (list at least 3)
+            3. Areas for improvement (list at least 3)
+            4. Specific suggestions for enhancing the resume (list at least 3)
+            5. Job fit assessment (low, medium, or high)
+            
+            Format your response with clear section headers for:
+            - Strengths:
+            - Weaknesses:
+            - Suggestions:
+            - Job Fit:
+            - Score:
             
             Resume text:
             ${resumeText}`
@@ -514,33 +515,73 @@ export const analyzeResume = async (resumeText: string) => {
     }
 
     const data = await response.json();
-    
-    // Parse the analysis to return a structured object
     const analysisText = data.choices[0].message.content;
     
-    // Extract key information from the analysis
-    const strengths: string[] = extractListSection(analysisText, 'Strengths:', 'Areas for improvement:') || ['Clear presentation of skills'];
-    const weaknesses: string[] = extractListSection(analysisText, 'Areas for improvement:', 'Suggested edits:') || ['Could be more concise'];
-    const suggestions: string[] = extractListSection(analysisText, 'Suggested edits:', 'Industry-specific advice:') || ['Add more quantifiable achievements'];
+    // Parse the analysis to extract structured data
+    const strengths: string[] = [];
+    const weaknesses: string[] = [];
+    const suggestions: string[] = [];
+    let jobFit: 'low' | 'medium' | 'high' = 'medium';
+    let score = 70; // Default score
+    
+    // Extract strengths
+    if (analysisText.includes('Strengths:')) {
+      const strengthsSection = analysisText.split('Strengths:')[1].split(/Weaknesses:|Areas for Improvement:/)[0];
+      const strengthItems = strengthsSection.split(/\n+/).filter(item => item.trim().startsWith('-'));
+      strengthItems.forEach(item => {
+        const cleaned = item.replace(/^-\s*/, '').trim();
+        if (cleaned) strengths.push(cleaned);
+      });
+    }
+    
+    // Extract weaknesses
+    const weaknessesRegex = /Weaknesses:|Areas for Improvement:|Areas to Improve:/;
+    if (analysisText.match(weaknessesRegex)) {
+      const weaknessesSection = analysisText.split(weaknessesRegex)[1].split(/Suggestions:|Recommendations:/)[0];
+      const weaknessItems = weaknessesSection.split(/\n+/).filter(item => item.trim().startsWith('-'));
+      weaknessItems.forEach(item => {
+        const cleaned = item.replace(/^-\s*/, '').trim();
+        if (cleaned) weaknesses.push(cleaned);
+      });
+    }
+    
+    // Extract suggestions
+    const suggestionsRegex = /Suggestions:|Recommendations:/;
+    if (analysisText.match(suggestionsRegex)) {
+      const suggestionsSection = analysisText.split(suggestionsRegex)[1].split(/Overall Assessment:|Score:|Job Fit:/)[0];
+      const suggestionItems = suggestionsSection.split(/\n+/).filter(item => item.trim().startsWith('-'));
+      suggestionItems.forEach(item => {
+        const cleaned = item.replace(/^-\s*/, '').trim();
+        if (cleaned) suggestions.push(cleaned);
+      });
+    }
     
     // Extract score
-    let score = 70;
-    const scoreMatch = analysisText.match(/score[:\s]*(\d+)/i);
-    if (scoreMatch && scoreMatch[1]) {
-      score = parseInt(scoreMatch[1], 10);
+    if (analysisText.includes('Score:')) {
+      const scoreMatch = analysisText.match(/Score:\s*(\d+)/i);
+      if (scoreMatch && scoreMatch[1]) {
+        score = parseInt(scoreMatch[1], 10);
+        if (score < 1) score = 1;
+        if (score > 100) score = 100;
+      }
     }
     
-    // Determine job fit
-    let jobFit: 'low' | 'medium' | 'high' = 'medium';
-    const lowTerms = ['poor', 'weak', 'inadequate', 'insufficient'];
-    const highTerms = ['excellent', 'outstanding', 'exceptional', 'impressive', 'strong'];
-    
-    const lowerCaseAnalysis = analysisText.toLowerCase();
-    if (lowTerms.some(term => lowerCaseAnalysis.includes(term))) {
-      jobFit = 'low';
-    } else if (highTerms.some(term => lowerCaseAnalysis.includes(term))) {
-      jobFit = 'high';
+    // Extract job fit
+    if (analysisText.toLowerCase().includes('job fit:')) {
+      const jobFitLower = analysisText.toLowerCase();
+      if (jobFitLower.includes('high') || jobFitLower.includes('strong') || jobFitLower.includes('excellent')) {
+        jobFit = 'high';
+      } else if (jobFitLower.includes('low') || jobFitLower.includes('poor') || jobFitLower.includes('weak')) {
+        jobFit = 'low';
+      } else {
+        jobFit = 'medium';
+      }
     }
+    
+    // Default values if parsing failed
+    if (strengths.length === 0) strengths.push('Clear presentation of skills');
+    if (weaknesses.length === 0) weaknesses.push('Could be more concise');
+    if (suggestions.length === 0) suggestions.push('Add more quantifiable achievements');
     
     return {
       analysisText,
@@ -554,7 +595,7 @@ export const analyzeResume = async (resumeText: string) => {
     console.error('Error analyzing resume:', error);
     throw error;
   }
-};
+}
 
 /**
  * Helper function to extract list items from a section of text
@@ -576,3 +617,4 @@ function extractListSection(text: string, startMarker: string, endMarker: string
   
   return items.length > 0 ? items : null;
 }
+

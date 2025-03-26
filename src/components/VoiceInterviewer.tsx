@@ -1,3 +1,4 @@
+
 import React, { useState, useEffect, useRef } from 'react';
 import { Button } from '@/components/ui/button';
 import { Card, CardContent } from '@/components/ui/card';
@@ -20,12 +21,72 @@ interface VoiceInterviewerProps {
   role?: string;
   category?: string;
   onComplete?: (messages: Message[]) => void;
+  duration?: number;
+  onClose?: () => void;
+}
+
+// Add WebSpeechAPI types
+interface SpeechRecognitionEvent extends Event {
+  results: SpeechRecognitionResultList;
+  resultIndex: number;
+}
+
+interface SpeechRecognitionResultList {
+  [index: number]: SpeechRecognitionResult;
+  length: number;
+}
+
+interface SpeechRecognitionResult {
+  [index: number]: SpeechRecognitionAlternative;
+  length: number;
+  isFinal: boolean;
+}
+
+interface SpeechRecognitionAlternative {
+  transcript: string;
+  confidence: number;
+}
+
+interface SpeechGrammar {
+  src: string;
+  weight: number;
+}
+
+interface SpeechGrammarList {
+  [index: number]: SpeechGrammar;
+  length: number;
+  addFromURI(src: string, weight: number): void;
+  addFromString(string: string, weight: number): void;
+}
+
+interface SpeechRecognition extends EventTarget {
+  continuous: boolean;
+  grammars: SpeechGrammarList;
+  interimResults: boolean;
+  lang: string;
+  maxAlternatives: number;
+  start(): void;
+  stop(): void;
+  abort(): void;
+  onresult: (event: SpeechRecognitionEvent) => void;
+  onerror: (event: Event) => void;
+  onend: () => void;
+}
+
+// Declare global window interface to include SpeechRecognition
+declare global {
+  interface Window {
+    SpeechRecognition: new () => SpeechRecognition;
+    webkitSpeechRecognition: new () => SpeechRecognition;
+  }
 }
 
 const VoiceInterviewer: React.FC<VoiceInterviewerProps> = ({
   role = 'Software Engineer',
   category = 'JavaScript',
   onComplete,
+  duration = 300, // 5 minutes by default
+  onClose
 }) => {
   const [messages, setMessages] = useState<Message[]>([]);
   const [input, setInput] = useState('');
@@ -34,20 +95,22 @@ const VoiceInterviewer: React.FC<VoiceInterviewerProps> = ({
   const [transcript, setTranscript] = useState('');
   const [isProcessing, setIsProcessing] = useState(false);
   const [questionCount, setQuestionCount] = useState(0);
+  const [timeRemaining, setTimeRemaining] = useState(duration);
   const messagesEndRef = useRef<HTMLDivElement>(null);
   const recognitionRef = useRef<SpeechRecognition | null>(null);
   const synthRef = useRef<SpeechSynthesis | null>(null);
 
   // Initialize speech recognition and synthesis
   useEffect(() => {
-    if ('SpeechRecognition' in window || 'webkitSpeechRecognition' in window) {
-      const SpeechRecognition = window.SpeechRecognition || window.webkitSpeechRecognition;
-      recognitionRef.current = new SpeechRecognition();
+    const SpeechRecognitionAPI = window.SpeechRecognition || window.webkitSpeechRecognition;
+    
+    if (SpeechRecognitionAPI) {
+      recognitionRef.current = new SpeechRecognitionAPI();
       recognitionRef.current.continuous = true;
       recognitionRef.current.interimResults = true;
       recognitionRef.current.lang = 'en-US';
 
-      recognitionRef.current.onresult = (event) => {
+      recognitionRef.current.onresult = (event: SpeechRecognitionEvent) => {
         const current = event.resultIndex;
         const result = event.results[current];
         const transcriptText = result[0].transcript;
@@ -55,8 +118,8 @@ const VoiceInterviewer: React.FC<VoiceInterviewerProps> = ({
       };
 
       recognitionRef.current.onerror = (event) => {
-        console.error('Speech recognition error', event.error);
-        toast.error('Speech recognition error: ' + event.error);
+        console.error('Speech recognition error', event);
+        toast.error('Speech recognition error occurred');
         setIsListening(false);
       };
     } else {
@@ -89,6 +152,20 @@ const VoiceInterviewer: React.FC<VoiceInterviewerProps> = ({
     scrollToBottom();
   }, [messages]);
 
+  // Timer countdown
+  useEffect(() => {
+    if (timeRemaining <= 0) {
+      endInterview();
+      return;
+    }
+
+    const timer = setInterval(() => {
+      setTimeRemaining(prev => prev - 1);
+    }, 1000);
+
+    return () => clearInterval(timer);
+  }, [timeRemaining]);
+
   const scrollToBottom = () => {
     messagesEndRef.current?.scrollIntoView({ behavior: 'smooth' });
   };
@@ -97,7 +174,7 @@ const VoiceInterviewer: React.FC<VoiceInterviewerProps> = ({
     const welcomeMessage = `Hello! I'm your AI interviewer for the ${role} position. I'll be asking you questions about ${category}. Please speak clearly or type your responses. Let's begin with the first question.`;
     
     setMessages([{ 
-      role: "assistant" as "user" | "assistant", 
+      role: 'assistant', 
       content: welcomeMessage, 
       timestamp: new Date() 
     }]);
@@ -198,7 +275,7 @@ const VoiceInterviewer: React.FC<VoiceInterviewerProps> = ({
     setMessages(prevMessages => [
       ...prevMessages,
       { 
-        role: "user" as "user" | "assistant", 
+        role: 'user', 
         content: userInput, 
         timestamp: new Date() 
       }
@@ -219,20 +296,20 @@ const VoiceInterviewer: React.FC<VoiceInterviewerProps> = ({
     try {
       // Get all previous messages for context
       const messageHistory = messages.map(msg => ({
-        role: msg.role === 'user' ? 'user' : 'assistant',
+        role: msg.role === 'user' ? 'user' as const : 'assistant' as const,
         content: msg.content
       }));
 
       // Add the new user response
       messageHistory.push({
-        role: 'user',
+        role: 'user' as const,
         content: userResponse
       });
 
       // Generate AI response
       const response = await getChatCompletion([
         {
-          role: 'system',
+          role: 'system' as const,
           content: `You are an AI interviewer for a ${role} position, focusing on ${category}. 
           Evaluate the candidate's responses and ask follow-up questions. 
           Be professional but conversational. 
@@ -246,7 +323,7 @@ const VoiceInterviewer: React.FC<VoiceInterviewerProps> = ({
       setMessages(prevMessages => [
         ...prevMessages,
         { 
-          role: "assistant" as "user" | "assistant", 
+          role: 'assistant', 
           content: response, 
           timestamp: new Date() 
         }
@@ -280,14 +357,14 @@ const VoiceInterviewer: React.FC<VoiceInterviewerProps> = ({
     try {
       // Get previous messages for context
       const messageHistory = messages.map(msg => ({
-        role: msg.role === 'user' ? 'user' : 'assistant',
+        role: msg.role === 'user' ? 'user' as const : 'assistant' as const,
         content: msg.content
       }));
 
       // Generate a new question
       const question = await getChatCompletion([
         {
-          role: 'system',
+          role: 'system' as const,
           content: `You are an AI interviewer for a ${role} position, focusing on ${category}. 
           Generate a challenging technical question that would be appropriate for this interview.
           The question should be specific and test the candidate's knowledge.
@@ -295,7 +372,7 @@ const VoiceInterviewer: React.FC<VoiceInterviewerProps> = ({
         },
         ...messageHistory,
         {
-          role: 'user',
+          role: 'user' as const,
           content: 'Please ask me the next interview question.'
         }
       ]);
@@ -304,7 +381,7 @@ const VoiceInterviewer: React.FC<VoiceInterviewerProps> = ({
       setMessages(prevMessages => [
         ...prevMessages,
         { 
-          role: "assistant" as "user" | "assistant", 
+          role: 'assistant', 
           content: question, 
           timestamp: new Date() 
         }
@@ -329,7 +406,7 @@ const VoiceInterviewer: React.FC<VoiceInterviewerProps> = ({
     setMessages(prevMessages => [
       ...prevMessages,
       { 
-        role: "assistant" as "user" | "assistant", 
+        role: 'assistant', 
         content: "Thank you for completing the interview. I hope it was helpful. You can now return to the dashboard to see your results.", 
         timestamp: new Date() 
       }
@@ -342,6 +419,17 @@ const VoiceInterviewer: React.FC<VoiceInterviewerProps> = ({
     if (onComplete) {
       onComplete(messages);
     }
+
+    // Call the onClose callback if provided
+    if (onClose) {
+      onClose();
+    }
+  };
+
+  const formatTime = (seconds: number) => {
+    const minutes = Math.floor(seconds / 60);
+    const remainingSeconds = seconds % 60;
+    return `${minutes}:${remainingSeconds.toString().padStart(2, '0')}`;
   };
 
   return (
@@ -359,9 +447,14 @@ const VoiceInterviewer: React.FC<VoiceInterviewerProps> = ({
                 <p className="text-sm text-muted-foreground">{role} - {category}</p>
               </div>
             </div>
-            <Badge variant="outline" className="bg-primary/10">
-              Question {questionCount}/5
-            </Badge>
+            <div className="flex items-center gap-2">
+              <span className="text-sm px-2 py-1 bg-amber-100 text-amber-800 rounded-full">
+                {formatTime(timeRemaining)}
+              </span>
+              <Badge variant="outline" className="bg-primary/10">
+                Question {questionCount}/5
+              </Badge>
+            </div>
           </div>
 
           <ScrollArea className="flex-1 pr-4">
