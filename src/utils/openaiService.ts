@@ -1,3 +1,4 @@
+
 import { toast } from 'sonner';
 
 // OpenAI API Key (hardcoded for testing purposes only - kept from original file)
@@ -6,7 +7,7 @@ const OPENAI_API_KEY = "sk-proj-XNKhGljxs1DhEQOjiw575JznsUEt5VbSs45dzs90PV9brFYR
 // Types
 export type ChatMessage = {
   role: 'system' | 'user' | 'assistant';
-  content: string;
+  content: string | Array<any>;
 };
 
 type ChatCompletionResponse = {
@@ -412,7 +413,7 @@ export function calculateSimilarity(expectedAnswer: string, providedAnswer: stri
 /**
  * Extract text from resume PDF
  */
-export const extractTextFromResume = async (pdfBase64: string) => {
+export const extractTextFromResume = async (pdfBase64: string): Promise<string> => {
   try {
     const response = await fetch('https://api.openai.com/v1/chat/completions', {
       method: 'POST',
@@ -617,4 +618,3 @@ function extractListSection(text: string, startMarker: string, endMarker: string
   
   return items.length > 0 ? items : null;
 }
-
