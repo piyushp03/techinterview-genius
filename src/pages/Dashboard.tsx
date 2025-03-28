@@ -6,6 +6,7 @@ import { Card, CardContent, CardDescription, CardFooter, CardHeader, CardTitle }
 import { Button } from '@/components/ui/button';
 import Navbar from '@/components/Navbar';
 import { Brain, MessageSquare, FileText, History, Settings, Mic, Code } from 'lucide-react';
+import DailyChallengeCard from '@/components/DailyChallengeCard';
 
 const Dashboard = () => {
   const { isAuthenticated, isLoading, user } = useAuth();
@@ -82,6 +83,10 @@ const Dashboard = () => {
         </header>
 
         <div className="grid gap-6 md:grid-cols-2 lg:grid-cols-3">
+          {/* Daily Challenge Card */}
+          <DailyChallengeCard />
+          
+          {/* Menu Items */}
           {menuItems.map((item, index) => (
             <Card key={index} className="transition-all hover:shadow-md">
               <CardHeader>

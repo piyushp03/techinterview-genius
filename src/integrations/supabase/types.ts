@@ -84,6 +84,42 @@ export type Database = {
         }
         Relationships: []
       }
+      daily_challenges: {
+        Row: {
+          created_at: string
+          date: string
+          description: string
+          difficulty: string
+          id: string
+          solution_explanation: string | null
+          starter_code: string
+          test_cases: string
+          title: string
+        }
+        Insert: {
+          created_at?: string
+          date?: string
+          description: string
+          difficulty: string
+          id?: string
+          solution_explanation?: string | null
+          starter_code: string
+          test_cases: string
+          title: string
+        }
+        Update: {
+          created_at?: string
+          date?: string
+          description?: string
+          difficulty?: string
+          id?: string
+          solution_explanation?: string | null
+          starter_code?: string
+          test_cases?: string
+          title?: string
+        }
+        Relationships: []
+      }
       interview_analysis: {
         Row: {
           created_at: string
@@ -194,6 +230,83 @@ export type Database = {
           role_type?: string
           start_time?: string | null
           time_limit?: number | null
+          updated_at?: string
+          user_id?: string
+        }
+        Relationships: []
+      }
+      user_challenges: {
+        Row: {
+          attempts: number
+          challenge_id: string
+          created_at: string
+          id: string
+          is_solved: boolean
+          language: string
+          updated_at: string
+          user_id: string
+          user_solution: string
+        }
+        Insert: {
+          attempts?: number
+          challenge_id: string
+          created_at?: string
+          id?: string
+          is_solved?: boolean
+          language?: string
+          updated_at?: string
+          user_id: string
+          user_solution: string
+        }
+        Update: {
+          attempts?: number
+          challenge_id?: string
+          created_at?: string
+          id?: string
+          is_solved?: boolean
+          language?: string
+          updated_at?: string
+          user_id?: string
+          user_solution?: string
+        }
+        Relationships: [
+          {
+            foreignKeyName: "user_challenges_challenge_id_fkey"
+            columns: ["challenge_id"]
+            isOneToOne: false
+            referencedRelation: "daily_challenges"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
+      user_stats: {
+        Row: {
+          created_at: string
+          current_streak: number
+          id: string
+          last_solved_date: string | null
+          longest_streak: number
+          total_solved: number
+          updated_at: string
+          user_id: string
+        }
+        Insert: {
+          created_at?: string
+          current_streak?: number
+          id?: string
+          last_solved_date?: string | null
+          longest_streak?: number
+          total_solved?: number
+          updated_at?: string
+          user_id: string
+        }
+        Update: {
+          created_at?: string
+          current_streak?: number
+          id?: string
+          last_solved_date?: string | null
+          longest_streak?: number
+          total_solved?: number
           updated_at?: string
           user_id?: string
         }
