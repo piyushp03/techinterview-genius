@@ -184,3 +184,63 @@ export async function analyzeAnswer(
     };
   }
 }
+
+/**
+ * Analyze text from PDF using OCR
+ */
+export async function analyzeInterviewDocument(
+  documentBase64: string
+): Promise<{
+  extractedText: string;
+  questions: string[];
+  answers: string[];
+}> {
+  try {
+    const response = await fetch('https://api.openai.com/v1/chat/completions', {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+        'Authorization': `Bearer ${OPENAI_API_KEY}`
+      },
+      body: JSON.stringify({
+        model: 'gpt-4o',
+        messages: [
+          {
+            role: 'system',
+            content: 'You are an expert at extracting and analyzing interview Q&A content from documents. Extract all questions and answers, and format them clearly.'
+          },
+          {
+            role: 'user',
+            content: [
+              {
+                type: 'text',
+                text: 'Extract all interview questions and answers from this document. Format your response as JSON with "extractedText", "questions", and "answers" arrays.'
+              },
+              {
+                type: 'image_url',
+                image_url: {
+                  url: `data:application/pdf;base64,${documentBase64}`
+                }
+              }
+            ]
+          }
+        ],
+        response_format: { type: "json_object" }
+      })
+    });
+
+    if (!response.ok) {
+      throw new Error('Failed to analyze document');
+    }
+
+    const data = await response.json();
+    return JSON.parse(data.choices[0].message.content);
+  } catch (error) {
+    console.error('Error analyzing document:', error);
+    return {
+      extractedText: 'Failed to extract text from document',
+      questions: [],
+      answers: []
+    };
+  }
+}

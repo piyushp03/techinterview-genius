@@ -6,10 +6,31 @@ import { Badge } from '@/components/ui/badge';
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs';
 import { ScrollArea } from '@/components/ui/scroll-area';
 import { Separator } from '@/components/ui/separator';
-import { ChartContainer } from '@/components/ui/chart';
 import { Bar, BarChart, PieChart, Pie, Cell, RadarChart, Radar, PolarGrid, PolarAngleAxis, ResponsiveContainer, XAxis, YAxis, CartesianGrid, Tooltip } from 'recharts';
 import { AnalysisMetrics, InterviewAnalysis } from '@/utils/interviewAnalysisService';
 import { Star, ChartBar } from 'lucide-react';
+
+// Define a simple interface for the chart container
+interface ChartContainerProps {
+  children: React.ReactNode;
+  className?: string;
+  config?: {
+    metrics?: { color: string };
+  };
+}
+
+// Simple chart container component
+const SimpleChartContainer: React.FC<ChartContainerProps> = ({ 
+  children, 
+  className = "", 
+  config = { metrics: { color: '#8884d8' } } 
+}) => {
+  return (
+    <div className={`w-full ${className}`}>
+      {children}
+    </div>
+  );
+};
 
 interface InterviewAnalysisResultsProps {
   analysis: InterviewAnalysis;
@@ -73,9 +94,7 @@ const InterviewAnalysisResults: React.FC<InterviewAnalysisResultsProps> = ({
           <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
             <div>
               <h3 className="text-sm font-medium mb-4">Performance Metrics</h3>
-              <ChartContainer className="h-72" config={{ 
-                metrics: { color: '#8884d8' }
-              }}>
+              <SimpleChartContainer className="h-72" config={{ metrics: { color: '#8884d8' } }}>
                 <ResponsiveContainer width="100%" height="100%">
                   <BarChart
                     data={metricsData}
@@ -88,12 +107,12 @@ const InterviewAnalysisResults: React.FC<InterviewAnalysisResultsProps> = ({
                     <Bar dataKey="value" name="Score" fill="#8884d8" radius={[4, 4, 0, 0]} />
                   </BarChart>
                 </ResponsiveContainer>
-              </ChartContainer>
+              </SimpleChartContainer>
             </div>
             
             <div>
               <h3 className="text-sm font-medium mb-4">Skills Radar</h3>
-              <ChartContainer className="h-72">
+              <SimpleChartContainer className="h-72">
                 <ResponsiveContainer width="100%" height="100%">
                   <RadarChart cx="50%" cy="50%" outerRadius="80%" data={radarData}>
                     <PolarGrid />
@@ -107,7 +126,7 @@ const InterviewAnalysisResults: React.FC<InterviewAnalysisResultsProps> = ({
                     />
                   </RadarChart>
                 </ResponsiveContainer>
-              </ChartContainer>
+              </SimpleChartContainer>
             </div>
           </div>
           

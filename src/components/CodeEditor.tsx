@@ -1,64 +1,89 @@
 
-import React, { useState, useEffect } from 'react';
-import { EditorState } from '@codemirror/state';
-import { EditorView, keymap } from '@codemirror/view';
-import { indentWithTab } from '@codemirror/commands';
+import React, { useEffect, useRef, useState } from 'react';
+import { defaultKeymap } from '@codemirror/commands';
 import { javascript } from '@codemirror/lang-javascript';
-import { python } from '@codemirror/lang-python';
 import { java } from '@codemirror/lang-java';
-import { cpp } from '@codemirror/lang-cpp';
-import { css } from '@codemirror/lang-css';
-import { html } from '@codemirror/lang-html';
-import { json } from '@codemirror/lang-json';
-import { markdown } from '@codemirror/lang-markdown';
+import { python } from '@codemirror/lang-python';
 import { rust } from '@codemirror/lang-rust';
+import { cpp } from '@codemirror/lang-cpp';
+import { html } from '@codemirror/lang-html';
 import { sql } from '@codemirror/lang-sql';
-import { xml } from '@codemirror/lang-xml';
-import { basicSetup } from '@codemirror/basic-setup';
+import { EditorView, keymap } from '@codemirror/view';
+import { EditorState } from '@codemirror/state';
+import useCodeMirror from '@/hooks/useCodeMirror';
 
-export interface CodeEditorProps {
+interface CodeEditorProps {
   language?: string;
   readOnly?: boolean;
   initialCode?: string;
   onChange?: (code: string) => void;
 }
 
-const CodeEditor: React.FC<CodeEditorProps> = ({ 
-  language = 'javascript', 
-  readOnly = false, 
-  initialCode = '// Start coding here',
-  onChange 
+const getLanguageExtension = (language: string) => {
+  switch (language.toLowerCase()) {
+    case 'javascript':
+    case 'js':
+      return javascript();
+    case 'typescript':
+    case 'ts':
+      return javascript({ typescript: true });
+    case 'java':
+      return java();
+    case 'python':
+    case 'py':
+      return python();
+    case 'rust':
+    case 'rs':
+      return rust();
+    case 'c++':
+    case 'cpp':
+      return cpp();
+    case 'html':
+      return html();
+    case 'sql':
+      return sql();
+    default:
+      return javascript();
+  }
+};
+
+const CodeEditor: React.FC<CodeEditorProps> = ({
+  language = 'javascript',
+  readOnly = false,
+  initialCode = '// Write your code here',
+  onChange
 }) => {
-  const [editorElement, setEditorElement] = useState<HTMLElement | null>(null);
+  const editorRef = useRef<HTMLDivElement>(null);
+  const [code, setCode] = useState(initialCode);
   const [editorView, setEditorView] = useState<EditorView | null>(null);
 
   useEffect(() => {
-    if (!editorElement) return;
+    if (!editorRef.current) return;
 
     const languageExtension = getLanguageExtension(language);
 
-    const startState = EditorState.create({
-      doc: initialCode,
+    const state = EditorState.create({
+      doc: code,
       extensions: [
-        basicSetup,
-        keymap.of([indentWithTab]),
+        keymap.of(defaultKeymap),
         languageExtension,
         EditorView.updateListener.of(update => {
-          if (update.changes && onChange) {
-            onChange(update.state.doc.toString());
+          if (update.docChanged) {
+            const newCode = update.state.doc.toString();
+            setCode(newCode);
+            if (onChange) {
+              onChange(newCode);
+            }
           }
         }),
-        EditorView.theme({
-          "&": { height: "100%" },
-          ".cm-scroller": { overflow: "auto" }
-        }),
+        EditorView.editable.of(!readOnly),
         EditorState.readOnly.of(readOnly)
       ]
     });
 
     const view = new EditorView({
-      state: startState,
-      parent: editorElement
+      state,
+      parent: editorRef.current
     });
 
     setEditorView(view);
@@ -66,59 +91,40 @@ const CodeEditor: React.FC<CodeEditorProps> = ({
     return () => {
       view.destroy();
     };
-  }, [editorElement, language, readOnly, initialCode, onChange]);
+  }, [language, readOnly]);
 
-  const getLanguageExtension = (lang: string) => {
-    switch (lang.toLowerCase()) {
-      case 'javascript':
-      case 'js':
-        return javascript();
-      case 'typescript':
-      case 'ts':
-        return javascript({ typescript: true });
-      case 'jsx':
-        return javascript({ jsx: true });
-      case 'tsx':
-        return javascript({ jsx: true, typescript: true });
-      case 'python':
-      case 'py':
-        return python();
-      case 'java':
-        return java();
-      case 'cpp':
-      case 'c++':
-        return cpp();
-      case 'css':
-        return css();
-      case 'html':
-        return html();
-      case 'json':
-        return json();
-      case 'markdown':
-      case 'md':
-        return markdown();
-      case 'rust':
-        return rust();
-      case 'sql':
-        return sql();
-      case 'xml':
-        return xml();
-      default:
-        return javascript();
+  useEffect(() => {
+    if (editorView && code !== editorView.state.doc.toString()) {
+      editorView.dispatch({
+        changes: {
+          from: 0,
+          to: editorView.state.doc.length,
+          insert: initialCode
+        }
+      });
     }
-  };
+  }, [initialCode]);
 
   return (
-    <div className="h-full w-full border rounded-md overflow-hidden bg-background">
-      <div className="flex items-center justify-between px-4 py-2 border-b bg-muted/50">
-        <span className="text-sm font-medium">
-          {language.toUpperCase()} Editor {readOnly ? '(Read Only)' : ''}
-        </span>
+    <div className="w-full h-full border rounded-md overflow-hidden bg-background">
+      <div className="bg-muted p-2 border-b">
+        <div className="flex items-center justify-between">
+          <span className="text-sm font-medium">
+            {language.charAt(0).toUpperCase() + language.slice(1)} Editor
+          </span>
+          {readOnly && (
+            <span className="bg-secondary text-secondary-foreground text-xs px-2 py-1 rounded">
+              Read Only
+            </span>
+          )}
+        </div>
       </div>
-      <div 
-        ref={setEditorElement} 
-        className="h-[calc(100%-40px)] w-full overflow-auto"
-      />
+      <div className="p-2 h-[calc(100%-40px)] overflow-auto">
+        <div
+          ref={editorRef}
+          className="h-full w-full font-mono text-sm"
+        />
+      </div>
     </div>
   );
 };
