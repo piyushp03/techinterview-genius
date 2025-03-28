@@ -1,6 +1,6 @@
 
 import { useState, useRef, useEffect } from 'react';
-import { Mic, MicOff, Send, User, PauseCircle, PlayCircle, RotateCcw, Maximize, Minimize, Star } from 'lucide-react';
+import { Mic, MicOff, Send, User, PauseCircle, PlayCircle, RotateCcw, Maximize, Minimize, Star, Volume2, VolumeX } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import useSpeechRecognition from '@/hooks/useSpeechRecognition';
 import { AudioRecorder, transcribeAudio, synthesizeSpeech, playAudio } from '@/utils/speechRecognitionService';
@@ -30,6 +30,7 @@ const InterviewPanel = ({
   const messagesEndRef = useRef<HTMLDivElement>(null);
   const messageInputRef = useRef<HTMLTextAreaElement>(null);
   const [isSpeaking, setIsSpeaking] = useState(false);
+  const [isMuted, setIsMuted] = useState(false);
   const [isListeningWithWhisper, setIsListeningWithWhisper] = useState(false);
   const audioRecorderRef = useRef<AudioRecorder | null>(null);
   
@@ -55,7 +56,7 @@ const InterviewPanel = ({
   // Auto-play the latest assistant message if speaking is enabled
   useEffect(() => {
     const playLatestMessage = async () => {
-      if (isSpeaking && messages.length > 0) {
+      if (isSpeaking && !isMuted && messages.length > 0) {
         const latestMessage = messages[messages.length - 1];
         if (latestMessage.is_bot) {
           speakText(latestMessage.content);
@@ -64,7 +65,7 @@ const InterviewPanel = ({
     };
     
     playLatestMessage();
-  }, [messages, isSpeaking]);
+  }, [messages, isSpeaking, isMuted]);
 
   const handleSendMessage = async () => {
     if (!input.trim() || isProcessing) return;
@@ -101,6 +102,11 @@ const InterviewPanel = ({
     toast.success(isSpeaking ? 'Voice output disabled' : 'Voice output enabled');
   };
 
+  const toggleMute = () => {
+    setIsMuted(!isMuted);
+    toast.success(isMuted ? 'Audio unmuted' : 'Audio muted');
+  };
+
   const startListeningWithWhisper = async () => {
     if (isListeningWithWhisper) return;
     
@@ -131,6 +137,8 @@ const InterviewPanel = ({
   };
 
   const speakText = async (text: string) => {
+    if (isMuted) return;
+    
     try {
       const audioData = await synthesizeSpeech(text);
       if (audioData) {
@@ -212,8 +220,20 @@ const InterviewPanel = ({
           <Button 
             variant="ghost" 
             size="icon"
+            onClick={toggleMute}
+            title={isMuted ? "Unmute audio" : "Mute audio"}
+          >
+            {isMuted ? (
+              <VolumeX className="h-5 w-5 text-red-500" />
+            ) : (
+              <Volume2 className="h-5 w-5" />
+            )}
+          </Button>
+          <Button 
+            variant="ghost" 
+            size="icon"
             onClick={toggleSpeaking}
-            title={isSpeaking ? "Mute AI voice" : "Enable AI voice"}
+            title={isSpeaking ? "Disable AI voice" : "Enable AI voice"}
           >
             {isSpeaking ? (
               <PauseCircle className="h-5 w-5" />

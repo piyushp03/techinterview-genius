@@ -36,6 +36,7 @@ const VoiceInterviewer: React.FC<VoiceInterviewerProps> = ({
   const [messages, setMessages] = useState<Message[]>([]);
   const [input, setInput] = useState('');
   const [isSpeaking, setIsSpeaking] = useState(false);
+  const [isMuted, setIsMuted] = useState(false);
   const [isProcessing, setIsProcessing] = useState(false);
   const [questionCount, setQuestionCount] = useState(0);
   const [timeRemaining, setTimeRemaining] = useState(duration);
@@ -108,7 +109,9 @@ const VoiceInterviewer: React.FC<VoiceInterviewerProps> = ({
       timestamp: new Date() 
     }]);
     
-    speakText(welcomeMessage);
+    if (!isMuted) {
+      speakText(welcomeMessage);
+    }
     
     // Generate first question after welcome message
     setTimeout(() => {
@@ -140,19 +143,32 @@ const VoiceInterviewer: React.FC<VoiceInterviewerProps> = ({
       setIsSpeaking(false);
     } else {
       setIsSpeaking(true);
-      // Speak the last assistant message
-      const lastAssistantMessage = [...messages]
-        .reverse()
-        .find(msg => msg.role === 'assistant');
-      
-      if (lastAssistantMessage) {
-        speakText(lastAssistantMessage.content);
+      if (!isMuted) {
+        // Speak the last assistant message
+        const lastAssistantMessage = [...messages]
+          .reverse()
+          .find(msg => msg.role === 'assistant');
+        
+        if (lastAssistantMessage) {
+          speakText(lastAssistantMessage.content);
+        }
       }
     }
   };
 
+  const toggleMute = () => {
+    setIsMuted(!isMuted);
+    if (!isMuted) {
+      // Cancel any ongoing speech when muting
+      if (synthRef.current) {
+        synthRef.current.cancel();
+      }
+    }
+    toast.success(isMuted ? 'Audio unmuted' : 'Audio muted');
+  };
+
   const speakText = (text: string) => {
-    if (!synthRef.current) return;
+    if (!synthRef.current || isMuted) return;
 
     // Cancel any ongoing speech
     synthRef.current.cancel();
@@ -251,8 +267,8 @@ const VoiceInterviewer: React.FC<VoiceInterviewerProps> = ({
         }
       ]);
 
-      // Speak the response if speaking is enabled
-      if (isSpeaking) {
+      // Speak the response if speaking is enabled and not muted
+      if (isSpeaking && !isMuted) {
         speakText(response);
       }
 
@@ -309,8 +325,8 @@ const VoiceInterviewer: React.FC<VoiceInterviewerProps> = ({
         }
       ]);
 
-      // Speak the question if speaking is enabled
-      if (isSpeaking) {
+      // Speak the question if speaking is enabled and not muted
+      if (isSpeaking && !isMuted) {
         speakText(question);
       }
 
@@ -334,8 +350,10 @@ const VoiceInterviewer: React.FC<VoiceInterviewerProps> = ({
       }
     ]);
 
-    // Speak the final message
-    speakText("Thank you for completing the interview. I hope it was helpful. You can now return to the dashboard to see your results.");
+    // Speak the final message if not muted
+    if (!isMuted) {
+      speakText("Thank you for completing the interview. I hope it was helpful. You can now return to the dashboard to see your results.");
+    }
 
     // Call the onComplete callback with the messages
     if (onComplete) {
@@ -416,6 +434,19 @@ const VoiceInterviewer: React.FC<VoiceInterviewerProps> = ({
                 disabled={listening || isProcessing}
               />
               <div className="absolute right-2 bottom-2 flex gap-1">
+                <Button
+                  type="button"
+                  size="icon"
+                  variant="ghost"
+                  onClick={toggleMute}
+                  disabled={isProcessing}
+                >
+                  {isMuted ? (
+                    <VolumeX className="h-4 w-4 text-red-500" />
+                  ) : (
+                    <Volume2 className="h-4 w-4" />
+                  )}
+                </Button>
                 <Button
                   type="button"
                   size="icon"

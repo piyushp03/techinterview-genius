@@ -1,378 +1,191 @@
 
-import { supabase } from '@/integrations/supabase/client';
-import { toast } from 'sonner';
-import { getChatCompletion } from './openaiService';
-
-// Types for our daily challenge system
-export type ChallengeLevel = 'easy' | 'medium' | 'hard';
-
-export type DailyChallenge = {
+// Types
+export interface DailyChallenge {
   id: string;
   title: string;
   description: string;
-  difficulty: ChallengeLevel;
+  difficulty: 'easy' | 'medium' | 'hard';
   date: string;
   starter_code: string;
   test_cases: string;
   solution_explanation?: string;
-  created_at: string;
-};
+}
 
-export type UserChallenge = {
+export interface UserChallenge {
   id: string;
   user_id: string;
   challenge_id: string;
   user_solution: string;
   is_solved: boolean;
-  language: string;
   attempts: number;
-  created_at: string;
-  updated_at: string;
-};
+  language: string;
+  feedback: string;
+  submitted_at: string;
+}
 
-export type UserStats = {
-  id: string;
+export interface UserStats {
   user_id: string;
   total_solved: number;
+  total_attempted: number;
   current_streak: number;
   longest_streak: number;
-  last_solved_date?: string;
-  created_at: string;
-  updated_at: string;
+}
+
+export interface ChallengeSubmissionResult {
+  success: boolean;
+  isSolved: boolean;
+  feedback: string;
+}
+
+// Mock data for challenges
+const MOCK_CHALLENGES: Record<string, DailyChallenge> = {
+  '1': {
+    id: '1',
+    title: 'Two Sum',
+    description: 'Given an array of integers nums and an integer target, return indices of the two numbers such that they add up to target.<br/><br/>You may assume that each input would have exactly one solution, and you may not use the same element twice.',
+    difficulty: 'easy',
+    date: new Date().toISOString(),
+    starter_code: 'function twoSum(nums, target) {\n  // Your code here\n}',
+    test_cases: 'twoSum([2,7,11,15], 9) // should return [0,1]\ntwoSum([3,2,4], 6) // should return [1,2]\ntwoSum([3,3], 6) // should return [0,1]',
+    solution_explanation: 'To solve this problem, we can use a hash map to store the numbers we\'ve seen so far and their indices. For each number, we check if target - number exists in the hash map. If it does, we\'ve found our answer. Otherwise, we add the current number to the hash map and continue.<br/><br/>Time complexity: O(n)<br/>Space complexity: O(n)',
+  },
+  '2': {
+    id: '2',
+    title: 'Valid Parentheses',
+    description: 'Given a string s containing just the characters \'(\', \')\', \'{\', \'}\', \'[\' and \']\', determine if the input string is valid.<br/><br/>An input string is valid if:<br/>1. Open brackets must be closed by the same type of brackets.<br/>2. Open brackets must be closed in the correct order.<br/>3. Every close bracket has a corresponding open bracket of the same type.',
+    difficulty: 'medium',
+    date: new Date(Date.now() - 86400000).toISOString(), // Yesterday
+    starter_code: 'function isValid(s) {\n  // Your code here\n}',
+    test_cases: 'isValid("()") // should return true\nisValid("()[]{}") // should return true\nisValid("(]") // should return false',
+    solution_explanation: 'We can use a stack to keep track of opening brackets. When we encounter a closing bracket, we check if the top of the stack has the corresponding opening bracket. If it does, we pop it from the stack and continue. If it doesn\'t, or if the stack is empty, the string is invalid.<br/><br/>Time complexity: O(n)<br/>Space complexity: O(n)',
+  },
 };
 
-// Fetch today's challenge
-export async function getTodaysChallenge(): Promise<DailyChallenge | null> {
-  try {
-    const today = new Date().toISOString().split('T')[0]; // Format: YYYY-MM-DD
-    
-    const { data, error } = await supabase
-      .from('daily_challenges')
-      .select('*')
-      .eq('date', today)
-      .single();
-    
-    if (error) {
-      if (error.code === 'PGRST116') {
-        // No challenge found for today, let's generate one
-        return await generateDailyChallenge();
-      }
-      
-      console.error('Error fetching daily challenge:', error);
-      toast.error('Failed to fetch today\'s challenge');
-      return null;
-    }
-    
-    return data;
-  } catch (error) {
-    console.error('Error in getTodaysChallenge:', error);
-    toast.error('An unexpected error occurred');
-    return null;
+// Mock data for user attempts
+const USER_ATTEMPTS: Record<string, UserChallenge> = {};
+
+// Mock data for user stats
+const USER_STATS: Record<string, UserStats> = {};
+
+// Helper to generate an ID
+const generateId = (): string => Math.random().toString(36).substring(2, 9);
+
+// Get today's challenge
+export const getTodaysChallenge = async (): Promise<DailyChallenge | null> => {
+  // In a real app, this would fetch from the database
+  // Here we just return a mock challenge
+  return MOCK_CHALLENGES['1'];
+};
+
+// Get user's attempt for a challenge
+export const getUserChallengeAttempt = async (userId: string, challengeId: string): Promise<UserChallenge | null> => {
+  // In a real app, this would fetch from the database
+  const attemptKey = `${userId}_${challengeId}`;
+  return USER_ATTEMPTS[attemptKey] || null;
+};
+
+// Get user's stats
+export const getUserStats = async (userId: string): Promise<UserStats> => {
+  // In a real app, this would fetch from the database
+  if (!USER_STATS[userId]) {
+    USER_STATS[userId] = {
+      user_id: userId,
+      total_solved: 0,
+      total_attempted: 0,
+      current_streak: 0,
+      longest_streak: 0,
+    };
   }
-}
-
-// Generate a new daily challenge using OpenAI
-async function generateDailyChallenge(): Promise<DailyChallenge | null> {
-  try {
-    // Generate the challenge using OpenAI
-    const prompt = `Create a coding challenge suitable for interview preparation. Include:
-    1. A clear title
-    2. A detailed description of the problem
-    3. Difficulty level (easy, medium, or hard)
-    4. Starter code in JavaScript
-    5. Test cases to verify the solution
-    6. An explanation of the solution approach
-
-    Format your response as a JSON object with these fields:
-    {
-      "title": "...",
-      "description": "...",
-      "difficulty": "easy|medium|hard",
-      "starter_code": "...",
-      "test_cases": "...",
-      "solution_explanation": "..."
-    }`;
-
-    const response = await getChatCompletion([
-      { role: 'system', content: 'You are an expert coding interview problem creator.' },
-      { role: 'user', content: prompt }
-    ]);
-
-    // Parse the response as JSON
-    const challengeData = JSON.parse(response);
-    
-    // Insert the new challenge into the database
-    const { data, error } = await supabase
-      .from('daily_challenges')
-      .insert({
-        title: challengeData.title,
-        description: challengeData.description,
-        difficulty: challengeData.difficulty,
-        date: new Date().toISOString().split('T')[0],
-        starter_code: challengeData.starter_code,
-        test_cases: challengeData.test_cases,
-        solution_explanation: challengeData.solution_explanation
-      })
-      .select()
-      .single();
-    
-    if (error) {
-      console.error('Error inserting daily challenge:', error);
-      toast.error('Failed to generate today\'s challenge');
-      return null;
-    }
-    
-    return data;
-  } catch (error) {
-    console.error('Error generating daily challenge:', error);
-    toast.error('Failed to generate today\'s challenge');
-    return null;
-  }
-}
-
-// Get user's attempt for today's challenge
-export async function getUserChallengeAttempt(userId: string, challengeId: string): Promise<UserChallenge | null> {
-  try {
-    const { data, error } = await supabase
-      .from('user_challenges')
-      .select('*')
-      .eq('user_id', userId)
-      .eq('challenge_id', challengeId)
-      .single();
-    
-    if (error) {
-      if (error.code === 'PGRST116') {
-        // No attempt found, return null
-        return null;
-      }
-      
-      console.error('Error fetching user challenge attempt:', error);
-      return null;
-    }
-    
-    return data;
-  } catch (error) {
-    console.error('Error in getUserChallengeAttempt:', error);
-    return null;
-  }
-}
+  return USER_STATS[userId];
+};
 
 // Submit a solution to a challenge
-export async function submitChallengeSolution(
-  userId: string,
-  challengeId: string,
-  solution: string,
+export const submitChallengeSolution = async (
+  userId: string, 
+  challengeId: string, 
+  solution: string, 
   language: string
-): Promise<{ success: boolean; feedback: string; isSolved: boolean }> {
-  try {
-    // Check if the user has an existing attempt
-    const existingAttempt = await getUserChallengeAttempt(userId, challengeId);
-    
-    // Get the challenge to evaluate against
-    const { data: challenge, error: challengeError } = await supabase
-      .from('daily_challenges')
-      .select('*')
-      .eq('id', challengeId)
-      .single();
-    
-    if (challengeError) {
-      console.error('Error fetching challenge:', challengeError);
-      return { success: false, feedback: 'Failed to fetch challenge details', isSolved: false };
-    }
-    
-    // Evaluate the solution using OpenAI
-    const evaluationPrompt = `
-    I'm working on this coding challenge:
-    
-    Title: ${challenge.title}
-    Description: ${challenge.description}
-    
-    Here are the test cases that should pass:
-    ${challenge.test_cases}
-    
-    My solution (in ${language}):
-    ${solution}
-    
-    Please evaluate if my solution is correct and would pass all the test cases.
-    Provide feedback on the approach, complexity, and any edge cases I might have missed.
-    Finally, determine whether the solution is correct or not.
-    
-    Format your response as a JSON object:
-    {
-      "isCorrect": true/false,
-      "feedback": "detailed feedback here",
-      "complexity": "time and space complexity analysis"
-    }`;
-    
-    const evaluationResponse = await getChatCompletion([
-      { role: 'system', content: 'You are an expert code reviewer. Evaluate the provided solution against the test cases and requirements.' },
-      { role: 'user', content: evaluationPrompt }
-    ]);
-    
-    // Parse the evaluation
-    const evaluation = JSON.parse(evaluationResponse);
-    const isSolved = evaluation.isCorrect;
-    
-    // Update or insert the user attempt
-    if (existingAttempt) {
-      // Update existing attempt
-      const { error: updateError } = await supabase
-        .from('user_challenges')
-        .update({
-          user_solution: solution,
-          is_solved: isSolved,
-          language,
-          attempts: existingAttempt.attempts + 1,
-          updated_at: new Date().toISOString()
-        })
-        .eq('id', existingAttempt.id);
-      
-      if (updateError) {
-        console.error('Error updating user attempt:', updateError);
-        return { success: false, feedback: 'Failed to save your solution', isSolved };
-      }
-    } else {
-      // Insert new attempt
-      const { error: insertError } = await supabase
-        .from('user_challenges')
-        .insert({
-          user_id: userId,
-          challenge_id: challengeId,
-          user_solution: solution,
-          is_solved: isSolved,
-          language,
-          attempts: 1
-        });
-      
-      if (insertError) {
-        console.error('Error inserting user attempt:', insertError);
-        return { success: false, feedback: 'Failed to save your solution', isSolved };
-      }
-    }
-    
-    // If solved, update user stats
-    if (isSolved) {
-      await updateUserStats(userId);
-    }
-    
+): Promise<ChallengeSubmissionResult> => {
+  // In a real app, this would send to the backend for evaluation
+  console.log(`Submitting solution for user ${userId}, challenge ${challengeId}`);
+  
+  const attemptKey = `${userId}_${challengeId}`;
+  const challenge = MOCK_CHALLENGES[challengeId];
+  
+  if (!challenge) {
     return {
-      success: true,
-      feedback: evaluation.feedback,
-      isSolved
+      success: false,
+      isSolved: false,
+      feedback: 'Challenge not found',
     };
-  } catch (error) {
-    console.error('Error in submitChallengeSolution:', error);
-    return { success: false, feedback: 'An unexpected error occurred', isSolved: false };
   }
-}
+  
+  // Check if user already has an attempt
+  const existingAttempt = USER_ATTEMPTS[attemptKey];
+  
+  // Evaluate the solution (in a real app, this would be much more sophisticated)
+  const isSolved = evaluateUserSolution(solution, challenge, language);
+  
+  // Generate feedback
+  const feedback = isSolved 
+    ? `Congratulations! Your solution passed all test cases. Here's an explanation of an optimal approach:<br/><br/>${challenge.solution_explanation || 'Great job solving this problem!'}` 
+    : 'Your solution did not pass all test cases. Try again!';
+  
+  // Create or update the attempt
+  const updatedAttempt: UserChallenge = {
+    id: existingAttempt?.id || generateId(),
+    user_id: userId,
+    challenge_id: challengeId,
+    user_solution: solution,
+    is_solved: isSolved,
+    attempts: (existingAttempt?.attempts || 0) + 1,
+    language,
+    feedback,
+    submitted_at: new Date().toISOString(),
+  };
+  
+  // Save the attempt
+  USER_ATTEMPTS[attemptKey] = updatedAttempt;
+  
+  // Update user stats if solved for the first time
+  if (isSolved && (!existingAttempt || !existingAttempt.is_solved)) {
+    const stats = await getUserStats(userId);
+    stats.total_solved += 1;
+    stats.current_streak += 1;
+    stats.longest_streak = Math.max(stats.longest_streak, stats.current_streak);
+    USER_STATS[userId] = stats;
+  }
+  
+  // Always increment total attempted if not already solved
+  if (!existingAttempt?.is_solved) {
+    const stats = await getUserStats(userId);
+    stats.total_attempted += 1;
+    USER_STATS[userId] = stats;
+  }
+  
+  return {
+    success: true,
+    isSolved,
+    feedback,
+  };
+};
 
-// Update user statistics after solving a challenge
-async function updateUserStats(userId: string): Promise<void> {
-  try {
-    // First, get current user stats
-    const { data: existingStats, error: statsError } = await supabase
-      .from('user_stats')
-      .select('*')
-      .eq('user_id', userId)
-      .single();
-    
-    const today = new Date().toISOString().split('T')[0];
-    
-    if (statsError && statsError.code !== 'PGRST116') {
-      console.error('Error fetching user stats:', statsError);
-      return;
-    }
-    
-    if (existingStats) {
-      // Calculate streak
-      let currentStreak = existingStats.current_streak;
-      let longestStreak = existingStats.longest_streak;
-      
-      // Check if the last solved date was yesterday
-      if (existingStats.last_solved_date) {
-        const lastSolvedDate = new Date(existingStats.last_solved_date);
-        const yesterday = new Date();
-        yesterday.setDate(yesterday.getDate() - 1);
-        
-        // Format as YYYY-MM-DD for comparison
-        const yesterdayFormatted = yesterday.toISOString().split('T')[0];
-        const lastSolvedFormatted = lastSolvedDate.toISOString().split('T')[0];
-        
-        if (lastSolvedFormatted === yesterdayFormatted) {
-          // Continuing the streak
-          currentStreak += 1;
-        } else if (lastSolvedFormatted !== today) {
-          // Streak broken
-          currentStreak = 1;
-        }
-      } else {
-        // First time solving
-        currentStreak = 1;
-      }
-      
-      // Update longest streak if needed
-      if (currentStreak > longestStreak) {
-        longestStreak = currentStreak;
-      }
-      
-      // Update stats
-      await supabase
-        .from('user_stats')
-        .update({
-          total_solved: existingStats.total_solved + 1,
-          current_streak: currentStreak,
-          longest_streak: longestStreak,
-          last_solved_date: today,
-          updated_at: new Date().toISOString()
-        })
-        .eq('id', existingStats.id);
-    } else {
-      // Create new stats record
-      await supabase
-        .from('user_stats')
-        .insert({
-          user_id: userId,
-          total_solved: 1,
-          current_streak: 1,
-          longest_streak: 1,
-          last_solved_date: today
-        });
-    }
-  } catch (error) {
-    console.error('Error updating user stats:', error);
+// Simple solution evaluator (in a real app, this would be much more sophisticated)
+const evaluateUserSolution = (solution: string, challenge: DailyChallenge, language: string): boolean => {
+  // This is a very simplistic solution checker
+  // In a real app, you would run the code against test cases
+  
+  // Check if the solution contains certain keywords that suggest it's on the right track
+  if (challenge.id === '1') { // Two Sum
+    return solution.includes('return') && 
+           solution.includes('target') && 
+           (solution.includes('Map') || solution.includes('Object') || solution.includes('{}'));
+  } else if (challenge.id === '2') { // Valid Parentheses
+    return solution.includes('return') && 
+           solution.includes('stack') && 
+           (solution.includes('push') || solution.includes('pop') || solution.includes('shift') || solution.includes('unshift'));
   }
-}
-
-// Get user statistics
-export async function getUserStats(userId: string): Promise<UserStats | null> {
-  try {
-    const { data, error } = await supabase
-      .from('user_stats')
-      .select('*')
-      .eq('user_id', userId)
-      .single();
-    
-    if (error) {
-      if (error.code === 'PGRST116') {
-        // No stats found, return default
-        return {
-          id: '',
-          user_id: userId,
-          total_solved: 0,
-          current_streak: 0,
-          longest_streak: 0,
-          created_at: new Date().toISOString(),
-          updated_at: new Date().toISOString()
-        };
-      }
-      
-      console.error('Error fetching user stats:', error);
-      return null;
-    }
-    
-    return data;
-  } catch (error) {
-    console.error('Error in getUserStats:', error);
-    return null;
-  }
-}
+  
+  // Default to false if we don't know how to evaluate
+  return false;
+};
