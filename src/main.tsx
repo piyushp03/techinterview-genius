@@ -21,6 +21,7 @@ import NewInterview from './pages/NewInterview';
 import InterviewSession from './pages/InterviewSession';
 import InterviewResultsPage from './pages/InterviewResultsPage';
 import VoiceInterviewPage from './pages/VoiceInterviewPage';
+import DailyChallenge from './pages/DailyChallenge';
 
 // Components
 import ProtectedRoute from './components/ProtectedRoute';
@@ -52,6 +53,7 @@ ReactDOM.createRoot(document.getElementById('root')!).render(
                   <Route path="new-interview" element={<ProtectedRoute><NewInterview /></ProtectedRoute>} />
                   <Route path="interview/:id" element={<ProtectedRoute><InterviewSession /></ProtectedRoute>} />
                   <Route path="results/:id" element={<ProtectedRoute><InterviewResultsPage /></ProtectedRoute>} />
+                  <Route path="daily-challenge" element={<ProtectedRoute><DailyChallenge /></ProtectedRoute>} />
                   <Route path="*" element={<NotFound />} />
                 </Route>
               </Routes>
