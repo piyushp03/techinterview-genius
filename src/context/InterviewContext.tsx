@@ -1,5 +1,5 @@
 
-import React, { createContext, useContext, useState, useReducer } from 'react';
+import React, { createContext, useContext, useState, useReducer, useEffect } from 'react';
 import { toast } from 'sonner';
 import { generateInterviewQuestion, evaluateAnswer } from '@/utils/openaiService';
 

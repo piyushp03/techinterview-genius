@@ -10,6 +10,7 @@ import { Badge } from '@/components/ui/badge';
 import { getChatCompletion } from '@/utils/openaiService';
 import { toast } from 'sonner';
 import { formatDistanceToNow } from 'date-fns';
+import useSpeechRecognition from '@/hooks/useSpeechRecognition';
 
 interface Message {
   role: 'user' | 'assistant';
@@ -25,62 +26,6 @@ interface VoiceInterviewerProps {
   onClose?: () => void;
 }
 
-// Add WebSpeechAPI types
-interface SpeechRecognitionEvent extends Event {
-  results: SpeechRecognitionResultList;
-  resultIndex: number;
-}
-
-interface SpeechRecognitionResultList {
-  [index: number]: SpeechRecognitionResult;
-  length: number;
-}
-
-interface SpeechRecognitionResult {
-  [index: number]: SpeechRecognitionAlternative;
-  length: number;
-  isFinal: boolean;
-}
-
-interface SpeechRecognitionAlternative {
-  transcript: string;
-  confidence: number;
-}
-
-interface SpeechGrammar {
-  src: string;
-  weight: number;
-}
-
-interface SpeechGrammarList {
-  [index: number]: SpeechGrammar;
-  length: number;
-  addFromURI(src: string, weight: number): void;
-  addFromString(string: string, weight: number): void;
-}
-
-interface SpeechRecognition extends EventTarget {
-  continuous: boolean;
-  grammars: SpeechGrammarList;
-  interimResults: boolean;
-  lang: string;
-  maxAlternatives: number;
-  start(): void;
-  stop(): void;
-  abort(): void;
-  onresult: (event: SpeechRecognitionEvent) => void;
-  onerror: (event: Event) => void;
-  onend: () => void;
-}
-
-// Declare global window interface to include SpeechRecognition
-declare global {
-  interface Window {
-    SpeechRecognition: new () => SpeechRecognition;
-    webkitSpeechRecognition: new () => SpeechRecognition;
-  }
-}
-
 const VoiceInterviewer: React.FC<VoiceInterviewerProps> = ({
   role = 'Software Engineer',
   category = 'JavaScript',
@@ -90,42 +35,29 @@ const VoiceInterviewer: React.FC<VoiceInterviewerProps> = ({
 }) => {
   const [messages, setMessages] = useState<Message[]>([]);
   const [input, setInput] = useState('');
-  const [isListening, setIsListening] = useState(false);
   const [isSpeaking, setIsSpeaking] = useState(false);
-  const [transcript, setTranscript] = useState('');
   const [isProcessing, setIsProcessing] = useState(false);
   const [questionCount, setQuestionCount] = useState(0);
   const [timeRemaining, setTimeRemaining] = useState(duration);
   const messagesEndRef = useRef<HTMLDivElement>(null);
-  const recognitionRef = useRef<SpeechRecognition | null>(null);
   const synthRef = useRef<SpeechSynthesis | null>(null);
 
-  // Initialize speech recognition and synthesis
+  // Use our custom speech recognition hook
+  const { 
+    transcript, 
+    listening, 
+    startListening, 
+    stopListening, 
+    resetTranscript, 
+    browserSupportsSpeechRecognition 
+  } = useSpeechRecognition({
+    onResult: (transcript) => {
+      setInput(transcript);
+    },
+  });
+
+  // Initialize speech synthesis
   useEffect(() => {
-    const SpeechRecognitionAPI = window.SpeechRecognition || window.webkitSpeechRecognition;
-    
-    if (SpeechRecognitionAPI) {
-      recognitionRef.current = new SpeechRecognitionAPI();
-      recognitionRef.current.continuous = true;
-      recognitionRef.current.interimResults = true;
-      recognitionRef.current.lang = 'en-US';
-
-      recognitionRef.current.onresult = (event: SpeechRecognitionEvent) => {
-        const current = event.resultIndex;
-        const result = event.results[current];
-        const transcriptText = result[0].transcript;
-        setTranscript(transcriptText);
-      };
-
-      recognitionRef.current.onerror = (event) => {
-        console.error('Speech recognition error', event);
-        toast.error('Speech recognition error occurred');
-        setIsListening(false);
-      };
-    } else {
-      toast.error('Speech recognition is not supported in this browser');
-    }
-
     if ('speechSynthesis' in window) {
       synthRef.current = window.speechSynthesis;
     } else {
@@ -133,9 +65,6 @@ const VoiceInterviewer: React.FC<VoiceInterviewerProps> = ({
     }
 
     return () => {
-      if (recognitionRef.current) {
-        recognitionRef.current.stop();
-      }
       if (synthRef.current) {
         synthRef.current.cancel();
       }
@@ -188,21 +117,14 @@ const VoiceInterviewer: React.FC<VoiceInterviewerProps> = ({
   };
 
   const toggleListening = () => {
-    if (!recognitionRef.current) {
-      toast.error('Speech recognition is not supported');
-      return;
-    }
-
-    if (isListening) {
-      recognitionRef.current.stop();
-      setIsListening(false);
+    if (listening) {
+      stopListening();
       if (transcript) {
         handleUserInput(transcript);
-        setTranscript('');
+        resetTranscript();
       }
     } else {
-      recognitionRef.current.start();
-      setIsListening(true);
+      startListening();
       toast.success('Listening...');
     }
   };
@@ -487,11 +409,11 @@ const VoiceInterviewer: React.FC<VoiceInterviewerProps> = ({
           <form onSubmit={handleSubmit} className="flex flex-col gap-2">
             <div className="relative">
               <Textarea
-                value={isListening ? transcript : input}
+                value={listening ? transcript : input}
                 onChange={(e) => setInput(e.target.value)}
                 placeholder="Type your response or use voice input..."
                 className="min-h-[80px] pr-20"
-                disabled={isListening || isProcessing}
+                disabled={listening || isProcessing}
               />
               <div className="absolute right-2 bottom-2 flex gap-1">
                 <Button
@@ -507,19 +429,21 @@ const VoiceInterviewer: React.FC<VoiceInterviewerProps> = ({
                     <Volume2 className="h-4 w-4" />
                   )}
                 </Button>
-                <Button
-                  type="button"
-                  size="icon"
-                  variant="ghost"
-                  onClick={toggleListening}
-                  disabled={isProcessing}
-                >
-                  {isListening ? (
-                    <MicOff className="h-4 w-4 text-red-500" />
-                  ) : (
-                    <Mic className="h-4 w-4" />
-                  )}
-                </Button>
+                {browserSupportsSpeechRecognition && (
+                  <Button
+                    type="button"
+                    size="icon"
+                    variant="ghost"
+                    onClick={toggleListening}
+                    disabled={isProcessing}
+                  >
+                    {listening ? (
+                      <MicOff className="h-4 w-4 text-red-500" />
+                    ) : (
+                      <Mic className="h-4 w-4" />
+                    )}
+                  </Button>
+                )}
               </div>
             </div>
             <div className="flex justify-between">
@@ -533,7 +457,7 @@ const VoiceInterviewer: React.FC<VoiceInterviewerProps> = ({
               </Button>
               <Button
                 type="submit"
-                disabled={(!input && !transcript) || isProcessing || isListening}
+                disabled={(!input && !transcript) || isProcessing || listening}
               >
                 {isProcessing ? (
                   <div className="h-4 w-4 animate-spin rounded-full border-2 border-current border-t-transparent" />
