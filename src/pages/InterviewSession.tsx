@@ -1,3 +1,4 @@
+
 import React, { useState, useEffect, useRef } from 'react';
 import { useParams, useNavigate } from 'react-router-dom';
 import { useAuth } from '@/context/AuthContext';
@@ -20,6 +21,7 @@ const InterviewSession = () => {
   const [messages, setMessages] = useState<any[]>([]);
   const [sessionData, setSessionData] = useState<any>(null);
   const [input, setInput] = useState('');
+  const [codeValue, setCodeValue] = useState('// Write your code here');
   const [isFullScreen, setIsFullScreen] = useState(false);
   const [isProcessing, setIsProcessing] = useState(false);
   const [activeTab, setActiveTab] = useState('chat');
@@ -277,6 +279,10 @@ const InterviewSession = () => {
     return Math.max(0, 100 - (timeRemaining / totalSeconds) * 100);
   };
 
+  const handleCodeChange = (newCode: string) => {
+    setCodeValue(newCode);
+  };
+
   if (loading) {
     return (
       <div className="flex h-screen w-full items-center justify-center">
@@ -362,6 +368,8 @@ const InterviewSession = () => {
                 <TabsContent value="code" className="flex-1 flex">
                   <CodeEditor
                     language={sessionData?.language || 'javascript'}
+                    initialCode={codeValue}
+                    onChange={handleCodeChange}
                     readOnly={isCompleted}
                   />
                 </TabsContent>

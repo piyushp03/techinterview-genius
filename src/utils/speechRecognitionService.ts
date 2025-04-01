@@ -1,24 +1,70 @@
 
+// Note: This is a mock implementation for demonstration
+// In a real app, this would connect to actual speech recognition services
+
 import { toast } from 'sonner';
 
-// Hardcoded OpenAI API key (should be secured in production)
-const OPENAI_API_KEY = "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";
+// API key for OpenAI Whisper API (hardcoded for testing)
+const API_KEY = "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";
 
-/**
- * Transcribe audio using OpenAI's Whisper API
- */
-export async function transcribeAudio(audioBlob: Blob): Promise<string> {
+// AudioRecorder class for recording audio
+export class AudioRecorder {
+  private mediaRecorder: MediaRecorder | null = null;
+  private audioChunks: Blob[] = [];
+  private onStopCallback: (audioBlob: Blob) => void;
+
+  constructor(onStopCallback: (audioBlob: Blob) => void) {
+    this.onStopCallback = onStopCallback;
+  }
+
+  async start(): Promise<void> {
+    try {
+      const stream = await navigator.mediaDevices.getUserMedia({ audio: true });
+      this.mediaRecorder = new MediaRecorder(stream);
+      this.audioChunks = [];
+
+      this.mediaRecorder.addEventListener('dataavailable', (event) => {
+        if (event.data.size > 0) {
+          this.audioChunks.push(event.data);
+        }
+      });
+
+      this.mediaRecorder.addEventListener('stop', () => {
+        const audioBlob = new Blob(this.audioChunks, { type: 'audio/webm' });
+        this.onStopCallback(audioBlob);
+        
+        // Stop all tracks to release the microphone
+        stream.getTracks().forEach(track => track.stop());
+      });
+
+      this.mediaRecorder.start();
+    } catch (error) {
+      console.error('Error starting audio recording:', error);
+      toast.error('Failed to access microphone. Please check your permissions.');
+    }
+  }
+
+  stop(): void {
+    if (this.mediaRecorder && this.mediaRecorder.state !== 'inactive') {
+      this.mediaRecorder.stop();
+    }
+  }
+}
+
+// Transcribe audio using OpenAI's Whisper API
+export const transcribeAudio = async (audioBlob: Blob): Promise<string | null> => {
   try {
-    // Create a FormData object to send the audio file
+    console.log('Transcribing audio with Whisper API using hardcoded API key');
+    
+    // Convert the audio blob to a base64 string
     const formData = new FormData();
-    formData.append('file', audioBlob, 'audio.webm');
+    formData.append('file', audioBlob, 'recording.webm');
     formData.append('model', 'whisper-1');
-    formData.append('language', 'en');
     
     const response = await fetch('https://api.openai.com/v1/audio/transcriptions', {
       method: 'POST',
       headers: {
-        'Authorization': `Bearer ${OPENAI_API_KEY}`
+        'Authorization': `Bearer ${API_KEY}`
       },
       body: formData
     });
@@ -33,70 +79,27 @@ export async function transcribeAudio(audioBlob: Blob): Promise<string> {
     return data.text;
   } catch (error) {
     console.error('Error transcribing audio:', error);
-    toast.error('Failed to transcribe speech. Please try again.');
-    return '';
+    toast.error('Failed to transcribe audio. Please try again.');
+    return null;
   }
-}
+};
 
-/**
- * Record audio from microphone
- */
-export class AudioRecorder {
-  private mediaRecorder: MediaRecorder | null = null;
-  private audioChunks: Blob[] = [];
-  
-  constructor(private onComplete: (audioBlob: Blob) => void) {}
-  
-  async start(): Promise<void> {
-    try {
-      const stream = await navigator.mediaDevices.getUserMedia({ audio: true });
-      this.mediaRecorder = new MediaRecorder(stream);
-      this.audioChunks = [];
-      
-      this.mediaRecorder.ondataavailable = (event) => {
-        if (event.data.size > 0) {
-          this.audioChunks.push(event.data);
-        }
-      };
-      
-      this.mediaRecorder.onstop = () => {
-        const audioBlob = new Blob(this.audioChunks, { type: 'audio/webm' });
-        this.onComplete(audioBlob);
-        
-        // Stop all tracks to release microphone
-        stream.getTracks().forEach(track => track.stop());
-      };
-      
-      this.mediaRecorder.start();
-    } catch (error) {
-      console.error('Error starting audio recording:', error);
-      toast.error('Failed to access microphone. Please check your permissions.');
-    }
-  }
-  
-  stop(): void {
-    if (this.mediaRecorder && this.mediaRecorder.state !== 'inactive') {
-      this.mediaRecorder.stop();
-    }
-  }
-}
-
-/**
- * Synthesize speech using OpenAI's TTS-1 API
- */
-export async function synthesizeSpeech(text: string, voice: string = 'alloy'): Promise<ArrayBuffer | null> {
+// Synthesize speech using a text-to-speech API
+export const synthesizeSpeech = async (text: string): Promise<ArrayBuffer | null> => {
   try {
+    console.log('Synthesizing speech with TTS API using hardcoded API key');
+    
+    // Use OpenAI's TTS API
     const response = await fetch('https://api.openai.com/v1/audio/speech', {
       method: 'POST',
       headers: {
-        'Authorization': `Bearer ${OPENAI_API_KEY}`,
+        'Authorization': `Bearer ${API_KEY}`,
         'Content-Type': 'application/json'
       },
       body: JSON.stringify({
         model: 'tts-1',
         input: text,
-        voice: voice,
-        response_format: 'mp3'
+        voice: 'alloy'
       })
     });
     
@@ -112,22 +115,21 @@ export async function synthesizeSpeech(text: string, voice: string = 'alloy'): P
     toast.error('Failed to generate speech. Please try again.');
     return null;
   }
-}
+};
 
-/**
- * Play audio from ArrayBuffer
- */
-export function playAudio(audioData: ArrayBuffer): Promise<void> {
+// Play audio from ArrayBuffer
+export const playAudio = async (audioData: ArrayBuffer): Promise<void> => {
+  const audioContext = new AudioContext();
+  const audioBuffer = await audioContext.decodeAudioData(audioData);
+  
+  const source = audioContext.createBufferSource();
+  source.buffer = audioBuffer;
+  source.connect(audioContext.destination);
+  source.start();
+  
   return new Promise((resolve) => {
-    const audioContext = new AudioContext();
-    audioContext.decodeAudioData(audioData, (buffer) => {
-      const source = audioContext.createBufferSource();
-      source.buffer = buffer;
-      source.connect(audioContext.destination);
-      source.onended = () => {
-        resolve();
-      };
-      source.start(0);
-    });
+    source.onended = () => {
+      resolve();
+    };
   });
-}
+};

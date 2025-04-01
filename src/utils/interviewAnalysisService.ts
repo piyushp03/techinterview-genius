@@ -19,7 +19,7 @@ export type InterviewAnalysis = {
   summaryText: string;
 };
 
-// Use the OpenAI API key from the openaiService.ts file
+// OpenAI API key (hardcoded for testing)
 const OPENAI_API_KEY = "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";
 
 /**
@@ -32,6 +32,8 @@ export async function analyzeInterviewSession(
   category: string
 ): Promise<InterviewAnalysis> {
   try {
+    console.log('Analyzing interview session with OpenAI using hardcoded API key');
+    
     const systemPrompt = `You are an expert interview coach analyzing a technical interview for a ${role} position focusing on ${category}.
     Evaluate the answers based on clarity, conciseness, depth of knowledge, fluency, and confidence.
     Rate each metric on a scale of 1-10 and provide an overall score.
@@ -137,6 +139,8 @@ export async function analyzeAnswer(
   weaknesses: string[];
 }> {
   try {
+    console.log('Analyzing answer with OpenAI using hardcoded API key');
+    
     const response = await fetch('https://api.openai.com/v1/chat/completions', {
       method: 'POST',
       headers: {
@@ -196,6 +200,8 @@ export async function analyzeInterviewDocument(
   answers: string[];
 }> {
   try {
+    console.log('Analyzing interview document with OpenAI using hardcoded API key');
+    
     const response = await fetch('https://api.openai.com/v1/chat/completions', {
       method: 'POST',
       headers: {

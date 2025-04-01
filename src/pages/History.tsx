@@ -11,6 +11,7 @@ import { History as HistoryIcon, Calendar, ChevronRight, Trash2, Clock, CheckCir
 import { toast } from 'sonner';
 import { format } from 'date-fns';
 import { Progress } from '@/components/ui/progress';
+import { AlertDialog, AlertDialogAction, AlertDialogCancel, AlertDialogContent, AlertDialogDescription, AlertDialogFooter, AlertDialogHeader, AlertDialogTitle, AlertDialogTrigger } from '@/components/ui/alert-dialog';
 
 const History = () => {
   const { user } = useAuth();
@@ -44,11 +45,24 @@ const History = () => {
   };
 
   const handleDeleteSession = async (id: string) => {
-    if (!confirm('Are you sure you want to delete this interview session?')) {
-      return;
-    }
-    
     try {
+      // First, delete related messages
+      const { error: messagesError } = await supabase
+        .from('interview_messages')
+        .delete()
+        .eq('session_id', id);
+        
+      if (messagesError) throw messagesError;
+      
+      // Delete any analysis
+      const { error: analysisError } = await supabase
+        .from('interview_analysis')
+        .delete()
+        .eq('session_id', id);
+        
+      if (analysisError) throw analysisError;
+      
+      // Finally, delete the session
       const { error } = await supabase
         .from('interview_sessions')
         .delete()
@@ -71,6 +85,10 @@ const History = () => {
       'system-design': 'bg-red-100 text-red-800',
       'behavioral': 'bg-teal-100 text-teal-800',
       'language-specific': 'bg-indigo-100 text-indigo-800',
+      'frontend': 'bg-blue-100 text-blue-800',
+      'backend': 'bg-green-100 text-green-800',
+      'fullstack': 'bg-amber-100 text-amber-800',
+      'voice-interview': 'bg-pink-100 text-pink-800',
     };
     
     return categories[category] || 'bg-gray-100 text-gray-800';
@@ -112,7 +130,10 @@ const History = () => {
     <div className="min-h-screen bg-background flex flex-col">
       <Navbar />
       <main className="flex-1 container py-8 px-4 md:px-6">
-        <h1 className="text-3xl font-bold mb-6">Interview History</h1>
+        <div className="flex justify-between items-center mb-6">
+          <h1 className="text-3xl font-bold">Interview History</h1>
+          <Button onClick={() => navigate('/interview/new')}>Start New Interview</Button>
+        </div>
         
         {loading ? (
           <div className="flex justify-center py-10">
@@ -172,16 +193,34 @@ const History = () => {
                     </div>
                   </CardContent>
                   <CardFooter className="flex justify-between">
-                    <Button 
-                      variant="ghost" 
-                      size="icon"
-                      onClick={(e) => {
-                        e.stopPropagation();
-                        handleDeleteSession(session.id);
-                      }}
-                    >
-                      <Trash2 className="h-4 w-4 text-destructive" />
-                    </Button>
+                    <AlertDialog>
+                      <AlertDialogTrigger asChild>
+                        <Button variant="ghost" size="icon">
+                          <Trash2 className="h-4 w-4 text-destructive" />
+                        </Button>
+                      </AlertDialogTrigger>
+                      <AlertDialogContent>
+                        <AlertDialogHeader>
+                          <AlertDialogTitle>Delete Interview Session</AlertDialogTitle>
+                          <AlertDialogDescription>
+                            Are you sure you want to delete this interview session? This action cannot be undone and all messages and analysis will be permanently deleted.
+                          </AlertDialogDescription>
+                        </AlertDialogHeader>
+                        <AlertDialogFooter>
+                          <AlertDialogCancel>Cancel</AlertDialogCancel>
+                          <AlertDialogAction
+                            onClick={(e) => {
+                              e.stopPropagation();
+                              handleDeleteSession(session.id);
+                            }}
+                            className="bg-destructive text-destructive-foreground hover:bg-destructive/90"
+                          >
+                            Delete
+                          </AlertDialogAction>
+                        </AlertDialogFooter>
+                      </AlertDialogContent>
+                    </AlertDialog>
+                    
                     <Button 
                       variant={session.end_time ? "default" : "outline"}
                       className="gap-1"
