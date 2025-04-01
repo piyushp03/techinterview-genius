@@ -1,3 +1,4 @@
+
 import { useState, useEffect } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { useAuth } from '@/context/AuthContext';
@@ -6,17 +7,19 @@ import Navbar from '@/components/Navbar';
 import { Button } from '@/components/ui/button';
 import { Card, CardContent, CardDescription, CardFooter, CardHeader, CardTitle } from '@/components/ui/card';
 import { Badge } from '@/components/ui/badge';
-import { History as HistoryIcon, Calendar, ChevronRight, Trash2, Clock, CheckCircle, BarChart } from 'lucide-react';
+import { History as HistoryIcon, Calendar, ChevronRight, Trash2, Clock, CheckCircle, BarChart, AlertCircle } from 'lucide-react';
 import { toast } from 'sonner';
 import { format } from 'date-fns';
 import { Progress } from '@/components/ui/progress';
 import { AlertDialog, AlertDialogAction, AlertDialogCancel, AlertDialogContent, AlertDialogDescription, AlertDialogFooter, AlertDialogHeader, AlertDialogTitle, AlertDialogTrigger } from '@/components/ui/alert-dialog';
+import { Alert, AlertDescription, AlertTitle } from '@/components/ui/alert';
 
 const History = () => {
   const { user } = useAuth();
   const navigate = useNavigate();
   const [sessions, setSessions] = useState<any[]>([]);
   const [loading, setLoading] = useState(true);
+  const [emptyInterviews, setEmptyInterviews] = useState<Set<string>>(new Set());
 
   useEffect(() => {
     fetchSessions();
@@ -26,6 +29,7 @@ const History = () => {
     if (!user) return;
     
     try {
+      setLoading(true);
       const { data, error } = await supabase
         .from('interview_sessions')
         .select('*')
@@ -34,7 +38,30 @@ const History = () => {
       
       if (error) throw error;
       
-      setSessions(data || []);
+      if (data && data.length > 0) {
+        setSessions(data);
+        
+        // Check which sessions have no user messages
+        const emptySet = new Set<string>();
+        for (const session of data) {
+          if (session.end_time) { // Only check completed sessions
+            const { data: messages, error: msgError } = await supabase
+              .from('interview_messages')
+              .select('id')
+              .eq('session_id', session.id)
+              .eq('is_bot', false)
+              .limit(1);
+              
+            if (!msgError && (!messages || messages.length === 0)) {
+              emptySet.add(session.id);
+            }
+          }
+        }
+        
+        setEmptyInterviews(emptySet);
+      } else {
+        setSessions([]);
+      }
     } catch (error: any) {
       console.error('Error fetching interview sessions:', error);
       toast.error(error.message || 'Failed to load interview history');
@@ -146,7 +173,17 @@ const History = () => {
   };
 
   const getSessionStatusInfo = (session: any) => {
+    const isEmpty = emptyInterviews.has(session.id);
+    
     if (session.end_time) {
+      if (isEmpty) {
+        return {
+          status: 'No Responses',
+          icon: <AlertCircle className="h-4 w-4 text-amber-500" />,
+          buttonText: 'View Details',
+          action: () => navigate(`/interview/results/${session.id}`),
+        };
+      }
       return {
         status: 'Completed',
         icon: <CheckCircle className="h-4 w-4 text-green-500" />,
@@ -211,93 +248,110 @@ const History = () => {
             </Button>
           </div>
         ) : (
-          <div className="grid gap-6 md:grid-cols-2 lg:grid-cols-3">
-            {sessions.map((session) => {
-              const { status, icon, buttonText, action } = getSessionStatusInfo(session);
-              
-              return (
-                <Card key={session.id} className="hover:shadow-md transition-shadow">
-                  <CardHeader className="pb-2">
-                    <div className="flex justify-between items-start">
-                      <CardTitle>{session.role_type}</CardTitle>
-                      <Badge variant="outline" className={getCategoryColor(session.category)}>
-                        {session.category}
-                      </Badge>
-                    </div>
-                    <CardDescription className="flex items-center gap-1">
-                      <Calendar className="h-3 w-3" />
-                      {format(new Date(session.created_at), 'PPP')}
-                    </CardDescription>
-                  </CardHeader>
-                  <CardContent>
-                    <div className="space-y-4">
-                      <div className="flex items-center justify-between">
-                        <span className="text-sm font-medium">Language:</span>
-                        <span className="text-sm">{session.language}</span>
+          <>
+            <Alert variant="info" className="mb-6">
+              <AlertCircle className="h-4 w-4" />
+              <AlertTitle>Usage Tip</AlertTitle>
+              <AlertDescription>
+                To get the most benefit, try completing the entire interview session to receive personalized feedback and analysis.
+              </AlertDescription>
+            </Alert>
+            
+            <div className="grid gap-6 md:grid-cols-2 lg:grid-cols-3">
+              {sessions.map((session) => {
+                const { status, icon, buttonText, action } = getSessionStatusInfo(session);
+                const isEmpty = emptyInterviews.has(session.id);
+                
+                return (
+                  <Card key={session.id} className={`hover:shadow-md transition-shadow ${isEmpty && session.end_time ? 'border-amber-200' : ''}`}>
+                    <CardHeader className="pb-2">
+                      <div className="flex justify-between items-start">
+                        <CardTitle>{session.role_type}</CardTitle>
+                        <Badge variant="outline" className={getCategoryColor(session.category)}>
+                          {session.category}
+                        </Badge>
                       </div>
-                      
-                      <div className="space-y-1">
-                        <div className="flex items-center justify-between text-sm">
-                          <span>Progress:</span>
-                          <span>{session.current_question_count || 0}/{session.questions_limit}</span>
+                      <CardDescription className="flex items-center gap-1">
+                        <Calendar className="h-3 w-3" />
+                        {format(new Date(session.created_at), 'PPP')}
+                      </CardDescription>
+                    </CardHeader>
+                    <CardContent>
+                      <div className="space-y-4">
+                        <div className="flex items-center justify-between">
+                          <span className="text-sm font-medium">Language:</span>
+                          <span className="text-sm">{session.language}</span>
                         </div>
-                        <Progress value={calculateProgress(session)} className="h-2" />
+                        
+                        <div className="space-y-1">
+                          <div className="flex items-center justify-between text-sm">
+                            <span>Progress:</span>
+                            <span>{session.current_question_count || 0}/{session.questions_limit}</span>
+                          </div>
+                          <Progress value={calculateProgress(session)} className="h-2" />
+                        </div>
+                        
+                        <div className="flex items-center justify-between">
+                          <span className="text-sm font-medium">Status:</span>
+                          <span className="text-sm flex items-center gap-1">
+                            {icon} {status}
+                          </span>
+                        </div>
+                        
+                        {isEmpty && session.end_time && (
+                          <div className="text-amber-600 text-xs italic">
+                            No questions were answered in this session
+                          </div>
+                        )}
                       </div>
+                    </CardContent>
+                    <CardFooter className="flex justify-between">
+                      <AlertDialog>
+                        <AlertDialogTrigger asChild>
+                          <Button variant="ghost" size="icon">
+                            <Trash2 className="h-4 w-4 text-destructive" />
+                          </Button>
+                        </AlertDialogTrigger>
+                        <AlertDialogContent>
+                          <AlertDialogHeader>
+                            <AlertDialogTitle>Delete Interview Session</AlertDialogTitle>
+                            <AlertDialogDescription>
+                              Are you sure you want to delete this interview session? This action cannot be undone and all messages and analysis will be permanently deleted.
+                            </AlertDialogDescription>
+                          </AlertDialogHeader>
+                          <AlertDialogFooter>
+                            <AlertDialogCancel>Cancel</AlertDialogCancel>
+                            <AlertDialogAction
+                              onClick={(e) => {
+                                e.stopPropagation();
+                                handleDeleteSession(session.id);
+                              }}
+                              className="bg-destructive text-destructive-foreground hover:bg-destructive/90"
+                            >
+                              Delete
+                            </AlertDialogAction>
+                          </AlertDialogFooter>
+                        </AlertDialogContent>
+                      </AlertDialog>
                       
-                      <div className="flex items-center justify-between">
-                        <span className="text-sm font-medium">Status:</span>
-                        <span className="text-sm flex items-center gap-1">
-                          {icon} {status}
-                        </span>
-                      </div>
-                    </div>
-                  </CardContent>
-                  <CardFooter className="flex justify-between">
-                    <AlertDialog>
-                      <AlertDialogTrigger asChild>
-                        <Button variant="ghost" size="icon">
-                          <Trash2 className="h-4 w-4 text-destructive" />
-                        </Button>
-                      </AlertDialogTrigger>
-                      <AlertDialogContent>
-                        <AlertDialogHeader>
-                          <AlertDialogTitle>Delete Interview Session</AlertDialogTitle>
-                          <AlertDialogDescription>
-                            Are you sure you want to delete this interview session? This action cannot be undone and all messages and analysis will be permanently deleted.
-                          </AlertDialogDescription>
-                        </AlertDialogHeader>
-                        <AlertDialogFooter>
-                          <AlertDialogCancel>Cancel</AlertDialogCancel>
-                          <AlertDialogAction
-                            onClick={(e) => {
-                              e.stopPropagation();
-                              handleDeleteSession(session.id);
-                            }}
-                            className="bg-destructive text-destructive-foreground hover:bg-destructive/90"
-                          >
-                            Delete
-                          </AlertDialogAction>
-                        </AlertDialogFooter>
-                      </AlertDialogContent>
-                    </AlertDialog>
-                    
-                    <Button 
-                      variant={session.end_time ? "default" : "outline"}
-                      className="gap-1"
-                      onClick={action}
-                    >
-                      {buttonText}
-                      {session.end_time ? (
-                        <BarChart className="h-4 w-4" />
-                      ) : (
-                        <ChevronRight className="h-4 w-4" />
-                      )}
-                    </Button>
-                  </CardFooter>
-                </Card>
-              );
-            })}
-          </div>
+                      <Button 
+                        variant={session.end_time && !isEmpty ? "default" : "outline"}
+                        className="gap-1"
+                        onClick={action}
+                      >
+                        {buttonText}
+                        {session.end_time && !isEmpty ? (
+                          <BarChart className="h-4 w-4" />
+                        ) : (
+                          <ChevronRight className="h-4 w-4" />
+                        )}
+                      </Button>
+                    </CardFooter>
+                  </Card>
+                );
+              })}
+            </div>
+          </>
         )}
       </main>
     </div>
