@@ -29,6 +29,7 @@ const InterviewSession = () => {
   const [questionCount, setQuestionCount] = useState(0);
   const timerRef = useRef<number | null>(null);
   const [isCompleted, setIsCompleted] = useState(false);
+  const [hasAttemptedAtLeastOne, setHasAttemptedAtLeastOne] = useState(false);
 
   useEffect(() => {
     const fetchSessionData = async () => {
@@ -79,6 +80,10 @@ const InterviewSession = () => {
         
         if (messagesData.length > 0) {
           setMessages(messagesData);
+          
+          // Check if there's at least one user message
+          const hasUserMessage = messagesData.some(msg => !msg.is_bot);
+          setHasAttemptedAtLeastOne(hasUserMessage);
         } else {
           await generateFirstQuestion(data);
         }
@@ -174,6 +179,7 @@ const InterviewSession = () => {
       
       setMessages(prev => [...prev, userMessage[0]]);
       setInput('');
+      setHasAttemptedAtLeastOne(true);
       
       const previousQuestions = messages
         .filter(msg => msg.is_bot)
@@ -250,7 +256,18 @@ const InterviewSession = () => {
         window.clearInterval(timerRef.current);
       }
       
-      toast.success('Interview session completed');
+      // Only show results if at least one question was attempted
+      if (hasAttemptedAtLeastOne) {
+        toast.success('Interview completed! Redirecting to results...');
+        setTimeout(() => {
+          navigate(`/interview/results/${id}`);
+        }, 1500);
+      } else {
+        toast.success('Interview session ended');
+        setTimeout(() => {
+          navigate('/dashboard');
+        }, 1500);
+      }
     } catch (error: any) {
       console.error('Error ending interview:', error);
       toast.error('Failed to end interview session');
@@ -281,6 +298,14 @@ const InterviewSession = () => {
 
   const handleCodeChange = (newCode: string) => {
     setCodeValue(newCode);
+  };
+  
+  const forceRedirectToResults = () => {
+    if (hasAttemptedAtLeastOne) {
+      navigate(`/interview/results/${id}`);
+    } else {
+      navigate('/dashboard');
+    }
   };
 
   if (loading) {
@@ -336,7 +361,7 @@ const InterviewSession = () => {
               </div>
               <div>
                 {isCompleted ? (
-                  <Button variant="outline" onClick={() => navigate('/history')}>
+                  <Button variant="outline" onClick={forceRedirectToResults}>
                     View Interview Results
                   </Button>
                 ) : (

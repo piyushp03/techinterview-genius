@@ -1,4 +1,3 @@
-
 import { useState, useEffect } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { useAuth } from '@/context/AuthContext';
@@ -79,6 +78,58 @@ const History = () => {
     }
   };
 
+  const clearAllSessions = async () => {
+    if (!user) return;
+    
+    try {
+      setLoading(true);
+      
+      // Get all session IDs
+      const { data: sessionIds, error: fetchError } = await supabase
+        .from('interview_sessions')
+        .select('id')
+        .eq('user_id', user.id);
+        
+      if (fetchError) throw fetchError;
+      
+      if (sessionIds && sessionIds.length > 0) {
+        // Delete all messages for these sessions
+        const { error: messagesError } = await supabase
+          .from('interview_messages')
+          .delete()
+          .in('session_id', sessionIds.map(s => s.id));
+          
+        if (messagesError) throw messagesError;
+        
+        // Delete any analysis for these sessions
+        const { error: analysisError } = await supabase
+          .from('interview_analysis')
+          .delete()
+          .in('session_id', sessionIds.map(s => s.id));
+          
+        if (analysisError) throw analysisError;
+        
+        // Delete all sessions
+        const { error: sessionsError } = await supabase
+          .from('interview_sessions')
+          .delete()
+          .eq('user_id', user.id);
+          
+        if (sessionsError) throw sessionsError;
+        
+        toast.success('All interview sessions cleared');
+        setSessions([]);
+      } else {
+        toast.info('No sessions to clear');
+      }
+    } catch (error: any) {
+      console.error('Error clearing all sessions:', error);
+      toast.error(error.message || 'Failed to clear all sessions');
+    } finally {
+      setLoading(false);
+    }
+  };
+
   const getCategoryColor = (category: string) => {
     const categories: Record<string, string> = {
       'algorithms': 'bg-purple-100 text-purple-800',
@@ -132,7 +183,16 @@ const History = () => {
       <main className="flex-1 container py-8 px-4 md:px-6">
         <div className="flex justify-between items-center mb-6">
           <h1 className="text-3xl font-bold">Interview History</h1>
-          <Button onClick={() => navigate('/interview/new')}>Start New Interview</Button>
+          <div className="flex space-x-2">
+            <Button onClick={() => navigate('/interview/new')}>Start New Interview</Button>
+            <Button 
+              variant="outline" 
+              onClick={clearAllSessions}
+              disabled={loading || sessions.length === 0}
+            >
+              Clear All History
+            </Button>
+          </div>
         </div>
         
         {loading ? (

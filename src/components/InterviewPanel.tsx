@@ -53,6 +53,13 @@ const InterviewPanel = ({
     }
   }, [messages]);
 
+  // Update global mute state when component mute state changes
+  useEffect(() => {
+    // Import is inside useEffect to avoid circular dependencies
+    const { setMuted } = require('@/utils/speechRecognitionService');
+    setMuted(isMuted);
+  }, [isMuted]);
+
   // Auto-play the latest assistant message if speaking is enabled
   useEffect(() => {
     const playLatestMessage = async () => {
@@ -75,6 +82,7 @@ const InterviewPanel = ({
     }
     
     await onSendMessage(input);
+    setInput('');
     resetTranscript();
     
     if (messageInputRef.current) {
@@ -269,7 +277,7 @@ const InterviewPanel = ({
             onChange={(e) => setInput(e.target.value)}
             onKeyDown={handleKeyDown}
             placeholder={isCompleted ? "This interview is completed" : "Type your answer..."}
-            className="w-full px-4 py-3 pr-24 resize-none border rounded-lg focus:outline-none focus:ring-2 focus:ring-primary/50 min-h-[80px] max-h-40"
+            className="w-full px-4 py-3 pr-24 resize-none border rounded-lg focus:outline-none focus:ring-2 focus:ring-primary/50 min-h-[80px] max-h-40 bg-background text-foreground"
             rows={2}
             disabled={isProcessing || isCompleted || isListeningWithWhisper}
           />
