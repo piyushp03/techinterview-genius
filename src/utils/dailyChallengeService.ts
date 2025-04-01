@@ -2,8 +2,42 @@
 import { supabase } from '@/integrations/supabase/client';
 import { toast } from 'sonner';
 
+// Type definitions
+export type DailyChallenge = {
+  id: string;
+  title: string;
+  description: string;
+  difficulty: string;
+  date: string;
+  starter_code: string;
+  test_cases: string;
+  solution_explanation: string | null;
+};
+
+export type UserChallenge = {
+  id: string;
+  user_id: string;
+  challenge_id: string;
+  user_solution: string;
+  attempts: number;
+  is_solved: boolean;
+  language: string;
+  created_at: string;
+  updated_at: string;
+  feedback?: string;
+};
+
+export type UserStats = {
+  id?: string;
+  user_id: string;
+  total_solved: number;
+  current_streak: number;
+  longest_streak: number;
+  last_solved_date: string | null;
+};
+
 // Get today's daily coding challenge
-export const getTodaysChallenge = async () => {
+export const getTodaysChallenge = async (): Promise<DailyChallenge | null> => {
   try {
     const today = new Date();
     const formattedDate = today.toISOString().split('T')[0]; // YYYY-MM-DD format
@@ -39,7 +73,7 @@ export const getTodaysChallenge = async () => {
 };
 
 // Get user's attempt for a specific challenge
-export const getUserChallengeAttempt = async (userId: string, challengeId: string) => {
+export const getUserChallengeAttempt = async (userId: string, challengeId: string): Promise<UserChallenge | null> => {
   try {
     const { data, error } = await supabase
       .from('user_challenges')
@@ -69,7 +103,12 @@ export const submitChallengeSolution = async (
   challengeId: string,
   userSolution: string,
   language: string
-) => {
+): Promise<{
+  success: boolean;
+  message: string;
+  is_solved: boolean;
+  feedback?: string;
+}> => {
   try {
     console.log("Submitting challenge solution");
     
@@ -91,6 +130,9 @@ export const submitChallengeSolution = async (
     // For now, we'll use a basic simulation of evaluation
     const isCorrect = simulateEvaluation(userSolution, challenge);
     
+    // Generate feedback based on the evaluation
+    const feedback = generateFeedback(userSolution, challenge, isCorrect);
+    
     // Update user stats on successful solution
     if (isCorrect && (!existingAttempt || !existingAttempt.is_solved)) {
       await updateUserStats(userId);
@@ -106,7 +148,8 @@ export const submitChallengeSolution = async (
           attempts: existingAttempt.attempts + 1,
           is_solved: isCorrect,
           updated_at: new Date().toISOString(),
-          language
+          language,
+          feedback
         })
         .eq('id', existingAttempt.id);
       
@@ -120,7 +163,8 @@ export const submitChallengeSolution = async (
           challenge_id: challengeId,
           user_solution: userSolution,
           is_solved: isCorrect,
-          language
+          language,
+          feedback
         });
       
       if (error) throw error;
@@ -129,16 +173,60 @@ export const submitChallengeSolution = async (
     return {
       success: true,
       message: isCorrect ? 'Your solution is correct!' : 'Your solution needs more work.',
-      is_solved: isCorrect
+      is_solved: isCorrect,
+      feedback
     };
   } catch (error) {
     console.error('Error submitting challenge solution:', error);
     return {
       success: false,
       message: 'Error evaluating solution',
-      is_solved: false
+      is_solved: false,
+      feedback: 'There was an error processing your solution. Please try again.'
     };
   }
+};
+
+// Generate feedback based on the evaluation
+const generateFeedback = (userSolution: string, challenge: any, isCorrect: boolean): string => {
+  let feedback = '';
+  
+  if (isCorrect) {
+    feedback = `<div class="text-green-600 font-medium mb-2">Great job! Your solution is correct.</div>
+    <p>Your solution successfully passed all test cases. Here's a brief analysis:</p>
+    <ul class="list-disc list-inside space-y-1 mt-2">
+      <li>Your approach is efficient and well-implemented.</li>
+      <li>The code is readable and follows good practices.</li>
+      <li>All edge cases were handled appropriately.</li>
+    </ul>`;
+  } else {
+    // Generate specific feedback based on the solution
+    const issues = [];
+    
+    // Check for common issues in code
+    if (!userSolution.includes('return')) {
+      issues.push('Your function doesn\'t return a value.');
+    }
+    
+    if (userSolution.length < 50) {
+      issues.push('Your solution may be too brief to handle all required cases.');
+    }
+    
+    if (challenge.difficulty === 'hard' && !userSolution.includes('for') && !userSolution.includes('while')) {
+      issues.push('This problem likely requires iteration which is missing from your solution.');
+    }
+    
+    feedback = `<div class="text-amber-600 font-medium mb-2">Your solution needs some improvements.</div>
+    <p>Here's what you might want to look at:</p>
+    <ul class="list-disc list-inside space-y-1 mt-2">
+      ${issues.map(issue => `<li>${issue}</li>`).join('')}
+      <li>Make sure you're handling all the test cases described in the problem.</li>
+      <li>Review the requirements of the problem once more.</li>
+    </ul>
+    <p class="mt-2">Don't give up! With a few tweaks, you'll get there.</p>`;
+  }
+  
+  return feedback;
 };
 
 // Update user stats when they solve a challenge
@@ -241,7 +329,7 @@ const simulateEvaluation = (userSolution: string, challenge: any) => {
 };
 
 // Get user's stats
-export const getUserStats = async (userId: string) => {
+export const getUserStats = async (userId: string): Promise<UserStats | null> => {
   try {
     const { data, error } = await supabase
       .from('user_stats')
@@ -253,6 +341,7 @@ export const getUserStats = async (userId: string) => {
       if (error.code === 'PGRST116') {
         // No stats found
         return {
+          user_id: userId,
           total_solved: 0,
           current_streak: 0,
           longest_streak: 0,

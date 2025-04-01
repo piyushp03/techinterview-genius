@@ -6,17 +6,17 @@ import { Button } from '@/components/ui/button';
 import { Badge } from '@/components/ui/badge';
 import { Progress } from '@/components/ui/progress';
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs';
-import { useToast } from '@/hooks/use-toast';
+import { toast } from 'sonner';
 import { Clock, Award, Trophy, CheckCircle, AlertCircle, ArrowLeft, RefreshCw, Code } from 'lucide-react';
 import Navbar from '@/components/Navbar';
 import CodeEditor from '@/components/CodeEditor';
 import { useAuth } from '@/context/AuthContext';
-import { getTodaysChallenge, getUserChallengeAttempt, submitChallengeSolution, getUserStats, DailyChallenge as DailyChallengeType, UserChallenge, UserStats } from '@/utils/dailyChallengeService';
+import { getTodaysChallenge, getUserChallengeAttempt, submitChallengeSolution, getUserStats } from '@/utils/dailyChallengeService';
+import type { DailyChallenge as DailyChallengeType, UserChallenge, UserStats } from '@/utils/dailyChallengeService';
 
 const DailyChallengePage: React.FC = () => {
   const { user } = useAuth();
   const navigate = useNavigate();
-  const { toast } = useToast();
   
   const [activeTab, setActiveTab] = useState('challenge');
   const [challenge, setChallenge] = useState<DailyChallengeType | null>(null);
@@ -57,11 +57,7 @@ const DailyChallengePage: React.FC = () => {
         }
       } catch (error) {
         console.error('Error loading challenge:', error);
-        toast({
-          title: 'Error',
-          description: 'Failed to load today\'s challenge. Please try again later.',
-          variant: 'destructive'
-        });
+        toast.error('Failed to load today\'s challenge. Please try again later.');
       } finally {
         setIsLoading(false);
       }
@@ -95,42 +91,26 @@ const DailyChallengePage: React.FC = () => {
         
         // Show feedback
         setFeedback({
-          text: result.feedback,
-          type: result.isSolved ? 'success' : 'error'
+          text: result.feedback || result.message,
+          type: result.is_solved ? 'success' : 'error'
         });
         
-        if (result.isSolved) {
-          toast({
-            title: 'Congratulations!',
-            description: 'Your solution is correct!',
-            variant: 'default'
-          });
+        if (result.is_solved) {
+          toast.success('Congratulations! Your solution is correct!');
         } else {
-          toast({
-            title: 'Almost there!',
-            description: 'Your solution needs some work. Check the feedback for details.',
-            variant: 'default'
-          });
+          toast.warning('Your solution needs some work. Check the feedback for details.');
         }
       } else {
         setFeedback({
-          text: result.feedback,
+          text: result.feedback || result.message,
           type: 'error'
         });
         
-        toast({
-          title: 'Submission Error',
-          description: 'There was a problem evaluating your solution.',
-          variant: 'destructive'
-        });
+        toast.error('There was a problem evaluating your solution.');
       }
     } catch (error) {
       console.error('Error submitting solution:', error);
-      toast({
-        title: 'Submission Error',
-        description: 'An unexpected error occurred. Please try again.',
-        variant: 'destructive'
-      });
+      toast.error('An unexpected error occurred. Please try again.');
     } finally {
       setIsSubmitting(false);
     }
