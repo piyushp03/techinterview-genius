@@ -2,6 +2,7 @@
 import React, { createContext, useContext, useState, useReducer, useEffect } from 'react';
 import { toast } from 'sonner';
 import { generateInterviewQuestion, evaluateAnswer } from '@/utils/openaiService';
+import { supabase } from '@/integrations/supabase/client';
 
 // Type definitions
 export type InterviewRole = 'frontend' | 'backend' | 'fullstack' | 'devops' | 'data' | 'mobile';
@@ -141,6 +142,7 @@ export const InterviewProvider: React.FC<{ children: React.ReactNode }> = ({ chi
   const [selectedLanguage, setSelectedLanguage] = useState<ProgrammingLanguage>('javascript');
   const [selectedCategory, setSelectedCategory] = useState<InterviewCategory>('algorithms');
 
+  // Enhanced startSession with custom topics and improved question generation
   const startSession = async (options: Partial<InterviewSession>) => {
     dispatch({
       type: 'START_SESSION',
@@ -158,6 +160,8 @@ export const InterviewProvider: React.FC<{ children: React.ReactNode }> = ({ chi
     // Add initial assistant message
     setIsProcessing(true);
     try {
+      console.log("Starting new interview session with options:", options);
+      
       // Generate the initial question using OpenAI
       const initialQuestion = await generateInterviewQuestion(
         selectedRole,
@@ -166,6 +170,11 @@ export const InterviewProvider: React.FC<{ children: React.ReactNode }> = ({ chi
         options.resumeText,
         options.customTopics
       );
+      
+      // Check if we got a valid question
+      if (!initialQuestion || initialQuestion.trim() === '') {
+        throw new Error('Failed to generate initial interview question');
+      }
       
       const welcomeMessage = `Hello! I'll be your technical interviewer today. We'll focus on ${selectedCategory} questions for a ${selectedRole} role using ${selectedLanguage}.\n\n${initialQuestion}`;
       
@@ -176,6 +185,8 @@ export const InterviewProvider: React.FC<{ children: React.ReactNode }> = ({ chi
           content: welcomeMessage,
         },
       });
+      
+      console.log("Initial question generated successfully");
     } catch (error) {
       console.error('Error starting interview:', error);
       dispatch({
@@ -214,13 +225,16 @@ export const InterviewProvider: React.FC<{ children: React.ReactNode }> = ({ chi
         .filter(msg => msg.role === 'assistant')
         .map(msg => msg.content);
       
+      // Check if we have any custom topics to include
+      const customTopics = state.customTopics || [];
+      
       // Generate AI response using OpenAI
       const aiResponse = await generateInterviewQuestion(
         state.role,
         state.category,
         previousQuestions,
         state.resumeText,
-        state.customTopics
+        customTopics
       );
       
       // Add AI response

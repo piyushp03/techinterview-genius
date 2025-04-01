@@ -30,7 +30,7 @@ const InterviewPanel = ({
   const messagesEndRef = useRef<HTMLDivElement>(null);
   const messageInputRef = useRef<HTMLTextAreaElement>(null);
   const [isSpeaking, setIsSpeaking] = useState(false);
-  const [isMuted, setIsMutedState] = useState(false);
+  const [isMutedState, setIsMutedState] = useState(false);
   const [isListeningWithWhisper, setIsListeningWithWhisper] = useState(false);
   const audioRecorderRef = useRef<AudioRecorder | null>(null);
   
