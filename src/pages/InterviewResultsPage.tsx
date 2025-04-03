@@ -8,6 +8,7 @@ import InterviewResults from '@/components/InterviewResults';
 import { Button } from '@/components/ui/button';
 import { ArrowLeft } from 'lucide-react';
 import { toast } from 'sonner';
+import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogDescription } from '@/components/ui/dialog';
 
 const InterviewResultsPage = () => {
   const { id } = useParams<{ id: string }>();
@@ -15,6 +16,8 @@ const InterviewResultsPage = () => {
   const { user } = useAuth();
   const [loading, setLoading] = useState(true);
   const [sessionData, setSessionData] = useState<any>(null);
+  const [error, setError] = useState<string | null>(null);
+  const [isDialogOpen, setIsDialogOpen] = useState(false);
 
   useEffect(() => {
     const fetchSessionData = async () => {
@@ -28,19 +31,17 @@ const InterviewResultsPage = () => {
           .eq('user_id', user.id)
           .single();
         
-        if (error) throw error;
-        
-        if (!data) {
-          toast.error('Interview session not found');
-          navigate('/history');
-          return;
+        if (error) {
+          console.error('Error fetching interview session:', error);
+          setError('Interview session not found');
+          setIsDialogOpen(true);
+        } else {
+          setSessionData(data);
         }
-        
-        setSessionData(data);
       } catch (error: any) {
         console.error('Error fetching interview session:', error);
-        toast.error('Failed to load interview session');
-        navigate('/history');
+        setError('Failed to load interview session');
+        setIsDialogOpen(true);
       } finally {
         setLoading(false);
       }
@@ -48,6 +49,11 @@ const InterviewResultsPage = () => {
     
     fetchSessionData();
   }, [id, user, navigate]);
+
+  const handleCloseDialog = () => {
+    setIsDialogOpen(false);
+    navigate('/history');
+  };
 
   if (loading) {
     return (
@@ -73,14 +79,32 @@ const InterviewResultsPage = () => {
               Back to History
             </Button>
           </div>
-          <div>
-            <h2 className="text-xl font-semibold">{sessionData?.role_type} Interview Results</h2>
-            <p className="text-sm text-muted-foreground">Category: {sessionData?.category}, Language: {sessionData?.language}</p>
-          </div>
+          {sessionData && (
+            <div>
+              <h2 className="text-xl font-semibold">{sessionData?.role_type} Interview Results</h2>
+              <p className="text-sm text-muted-foreground">Category: {sessionData?.category}, Language: {sessionData?.language}</p>
+            </div>
+          )}
         </div>
         
-        <InterviewResults sessionId={id || ''} />
+        {id && <InterviewResults sessionId={id} />}
       </main>
+
+      <Dialog open={isDialogOpen} onOpenChange={setIsDialogOpen}>
+        <DialogContent>
+          <DialogHeader>
+            <DialogTitle>Error</DialogTitle>
+            <DialogDescription>
+              {error || 'An error occurred while loading the interview results.'}
+            </DialogDescription>
+          </DialogHeader>
+          <div className="flex justify-end">
+            <Button onClick={handleCloseDialog}>
+              Return to History
+            </Button>
+          </div>
+        </DialogContent>
+      </Dialog>
     </div>
   );
 };

@@ -5,6 +5,7 @@ import { Button } from '@/components/ui/button';
 import useSpeechRecognition from '@/hooks/useSpeechRecognition';
 import { AudioRecorder, transcribeAudio, synthesizeSpeech, playAudio } from '@/utils/speechRecognitionService';
 import { toast } from 'sonner';
+import { supabase } from '@/integrations/supabase/client';
 
 interface InterviewPanelProps {
   isFullScreen: boolean;
@@ -15,6 +16,7 @@ interface InterviewPanelProps {
   input: string;
   setInput: (value: string) => void;
   isCompleted?: boolean;
+  sessionId?: string;
 }
 
 const InterviewPanel = ({ 
@@ -25,7 +27,8 @@ const InterviewPanel = ({
   isProcessing, 
   input, 
   setInput,
-  isCompleted = false
+  isCompleted = false,
+  sessionId
 }: InterviewPanelProps) => {
   const messagesEndRef = useRef<HTMLDivElement>(null);
   const messageInputRef = useRef<HTMLTextAreaElement>(null);
@@ -48,9 +51,7 @@ const InterviewPanel = ({
   });
 
   useEffect(() => {
-    if (messagesEndRef.current) {
-      messagesEndRef.current.scrollIntoView({ behavior: 'smooth' });
-    }
+    scrollToBottom();
   }, [messages]);
 
   // Auto-play the latest assistant message if speaking is enabled
@@ -67,14 +68,41 @@ const InterviewPanel = ({
     playLatestMessage();
   }, [messages, isSpeaking, isMuted]);
 
+  const scrollToBottom = () => {
+    if (messagesEndRef.current) {
+      messagesEndRef.current.scrollIntoView({ behavior: 'smooth' });
+    }
+  };
+
   const handleSendMessage = async () => {
-    if (!input.trim() || isProcessing) return;
+    if (!input.trim() || isProcessing || isCompleted) return;
     
     if (listening) {
       stopListening();
     }
     
+    // If we have a sessionId, save the message to Supabase directly
+    if (sessionId) {
+      try {
+        const { error } = await supabase
+          .from('interview_messages')
+          .insert({
+            session_id: sessionId,
+            is_bot: false,
+            content: input.trim(),
+            created_at: new Date().toISOString()
+          });
+        
+        if (error) {
+          console.error('Error saving message to Supabase:', error);
+        }
+      } catch (err) {
+        console.error('Failed to save message to Supabase:', err);
+      }
+    }
+    
     await onSendMessage(input);
+    setInput('');
     resetTranscript();
     
     if (messageInputRef.current) {
@@ -108,7 +136,7 @@ const InterviewPanel = ({
   };
 
   const startListeningWithWhisper = async () => {
-    if (isListeningWithWhisper) return;
+    if (isListeningWithWhisper || isCompleted) return;
     
     setIsListeningWithWhisper(true);
     toast.success('Whisper AI speech recognition activated');

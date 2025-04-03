@@ -12,12 +12,15 @@ import { toast } from 'sonner';
 import { format } from 'date-fns';
 import { Progress } from '@/components/ui/progress';
 import { AlertDialog, AlertDialogAction, AlertDialogCancel, AlertDialogContent, AlertDialogDescription, AlertDialogFooter, AlertDialogHeader, AlertDialogTitle, AlertDialogTrigger } from '@/components/ui/alert-dialog';
+import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogDescription } from '@/components/ui/dialog';
 
 const History = () => {
   const { user } = useAuth();
   const navigate = useNavigate();
   const [sessions, setSessions] = useState<any[]>([]);
   const [loading, setLoading] = useState(true);
+  const [error, setError] = useState<string | null>(null);
+  const [isErrorDialogOpen, setIsErrorDialogOpen] = useState(false);
 
   useEffect(() => {
     fetchSessions();
@@ -27,6 +30,7 @@ const History = () => {
     if (!user) return;
     
     try {
+      setLoading(true);
       const { data, error } = await supabase
         .from('interview_sessions')
         .select('*')
@@ -38,7 +42,8 @@ const History = () => {
       setSessions(data || []);
     } catch (error: any) {
       console.error('Error fetching interview sessions:', error);
-      toast.error(error.message || 'Failed to load interview history');
+      setError(error.message || 'Failed to load interview history');
+      setIsErrorDialogOpen(true);
     } finally {
       setLoading(false);
     }
@@ -179,7 +184,7 @@ const History = () => {
                       <div className="space-y-1">
                         <div className="flex items-center justify-between text-sm">
                           <span>Progress:</span>
-                          <span>{session.current_question_count || 0}/{session.questions_limit}</span>
+                          <span>{session.current_question_count || 0}/{session.questions_limit || 5}</span>
                         </div>
                         <Progress value={calculateProgress(session)} className="h-2" />
                       </div>
@@ -240,6 +245,22 @@ const History = () => {
           </div>
         )}
       </main>
+
+      <Dialog open={isErrorDialogOpen} onOpenChange={setIsErrorDialogOpen}>
+        <DialogContent>
+          <DialogHeader>
+            <DialogTitle>Error</DialogTitle>
+            <DialogDescription>
+              {error || 'An error occurred while loading the interview history.'}
+            </DialogDescription>
+          </DialogHeader>
+          <div className="flex justify-end">
+            <Button onClick={() => setIsErrorDialogOpen(false)}>
+              Dismiss
+            </Button>
+          </div>
+        </DialogContent>
+      </Dialog>
     </div>
   );
 };
