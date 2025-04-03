@@ -622,21 +622,21 @@ const InterviewResults = ({ sessionId }: { sessionId: string }) => {
                         </div>
                       </div>
                       
-                      <Badge className="bg-red-100 text-red-800">{scorePercentage}%</Badge>
+                      <Badge className="bg-purple-100 text-purple-800">{scorePercentage}%</Badge>
                     </div>
                     
                     <div className="flex items-center gap-4 mt-4">
                       <div className="flex items-center">
                         <Award className="h-4 w-4 text-amber-500 mr-1" />
                         <span className="text-sm">
-                          {analysisSummary?.answered_questions || 0}/{analysisSummary?.total_questions || 5} correct
+                          {analysisSummary?.answered_questions || 0}/{analysisSummary?.total_questions || 5} questions
                         </span>
                       </div>
                       
                       <div className="flex items-center">
                         <Clock className="h-4 w-4 text-blue-500 mr-1" />
                         <span className="text-sm">
-                          {analysisSummary?.time_spent || 0}m {Math.floor(Math.random() * 60)}s
+                          {analysisSummary?.time_spent || 0}m
                         </span>
                       </div>
                       
@@ -711,7 +711,7 @@ const InterviewResults = ({ sessionId }: { sessionId: string }) => {
                         dataKey="score" 
                         name="Score (%)" 
                         stroke="#9b87f5" 
-                        activeDot={{ r: a8 }}
+                        activeDot={{ r: 8 }}
                         strokeWidth={2}
                       />
                     </LineChart>
