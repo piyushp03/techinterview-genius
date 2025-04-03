@@ -18,21 +18,27 @@ const InterviewResultsPage = () => {
   const [sessionData, setSessionData] = useState<any>(null);
   const [error, setError] = useState<string | null>(null);
   const [isDialogOpen, setIsDialogOpen] = useState(false);
+  const [showResults, setShowResults] = useState(true);
 
   useEffect(() => {
     const fetchSessionData = async () => {
       if (!id || !user) return;
       
       try {
+        setLoading(true);
+        
         const { data, error } = await supabase
           .from('interview_sessions')
           .select('*')
           .eq('id', id)
           .eq('user_id', user.id)
-          .single();
+          .maybeSingle();
         
         if (error) {
           console.error('Error fetching interview session:', error);
+          setError('Failed to load interview session');
+          setIsDialogOpen(true);
+        } else if (!data) {
           setError('Interview session not found');
           setIsDialogOpen(true);
         } else {
@@ -53,6 +59,10 @@ const InterviewResultsPage = () => {
   const handleCloseDialog = () => {
     setIsDialogOpen(false);
     navigate('/history');
+  };
+
+  const toggleResultsView = () => {
+    setShowResults(!showResults);
   };
 
   if (loading) {
@@ -87,7 +97,7 @@ const InterviewResultsPage = () => {
           )}
         </div>
         
-        {id && <InterviewResults sessionId={id} />}
+        {id && showResults && <InterviewResults sessionId={id} />}
       </main>
 
       <Dialog open={isDialogOpen} onOpenChange={setIsDialogOpen}>
