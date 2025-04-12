@@ -5,9 +5,9 @@ import {
   getTodaysChallenge, 
   getUserChallengeAttempt, 
   getUserStats,
-  DailyChallenge,
-  UserChallenge,
-  UserStats
+  type DailyChallenge,
+  type UserChallenge,
+  type UserStats
 } from '@/utils/dailyChallengeService';
 
 export function useDailyChallenge() {

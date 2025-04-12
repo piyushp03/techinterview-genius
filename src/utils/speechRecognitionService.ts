@@ -51,6 +51,18 @@ export class AudioRecorder {
   }
 }
 
+// Global mute state
+let isMuted = false;
+
+export const setMuted = (muted: boolean): void => {
+  isMuted = muted;
+  toast.success(muted ? 'Audio muted' : 'Audio unmuted');
+};
+
+export const getMuted = (): boolean => {
+  return isMuted;
+};
+
 // Transcribe audio using OpenAI's Whisper API
 export const transcribeAudio = async (audioBlob: Blob): Promise<string | null> => {
   try {
@@ -86,6 +98,11 @@ export const transcribeAudio = async (audioBlob: Blob): Promise<string | null> =
 
 // Synthesize speech using a text-to-speech API
 export const synthesizeSpeech = async (text: string): Promise<ArrayBuffer | null> => {
+  // If muted, skip speech synthesis
+  if (isMuted) {
+    return null;
+  }
+  
   try {
     console.log('Synthesizing speech with TTS API using hardcoded API key');
     
@@ -119,6 +136,11 @@ export const synthesizeSpeech = async (text: string): Promise<ArrayBuffer | null
 
 // Play audio from ArrayBuffer
 export const playAudio = async (audioData: ArrayBuffer): Promise<void> => {
+  // If muted, skip audio playback
+  if (isMuted) {
+    return;
+  }
+  
   const audioContext = new AudioContext();
   const audioBuffer = await audioContext.decodeAudioData(audioData);
   

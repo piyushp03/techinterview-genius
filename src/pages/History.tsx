@@ -1,4 +1,3 @@
-
 import { useState, useEffect } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { useAuth } from '@/context/AuthContext';
@@ -12,15 +11,12 @@ import { toast } from 'sonner';
 import { format } from 'date-fns';
 import { Progress } from '@/components/ui/progress';
 import { AlertDialog, AlertDialogAction, AlertDialogCancel, AlertDialogContent, AlertDialogDescription, AlertDialogFooter, AlertDialogHeader, AlertDialogTitle, AlertDialogTrigger } from '@/components/ui/alert-dialog';
-import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogDescription } from '@/components/ui/dialog';
 
 const History = () => {
   const { user } = useAuth();
   const navigate = useNavigate();
   const [sessions, setSessions] = useState<any[]>([]);
   const [loading, setLoading] = useState(true);
-  const [error, setError] = useState<string | null>(null);
-  const [isErrorDialogOpen, setIsErrorDialogOpen] = useState(false);
 
   useEffect(() => {
     fetchSessions();
@@ -30,7 +26,6 @@ const History = () => {
     if (!user) return;
     
     try {
-      setLoading(true);
       const { data, error } = await supabase
         .from('interview_sessions')
         .select('*')
@@ -42,36 +37,7 @@ const History = () => {
       setSessions(data || []);
     } catch (error: any) {
       console.error('Error fetching interview sessions:', error);
-      setError(error.message || 'Failed to load interview history');
-      setIsErrorDialogOpen(true);
-      
-      // Create some fallback data for testing
-      const fallbackSessions = [
-        {
-          id: "fallback-1",
-          role_type: "Frontend Developer",
-          category: "algorithms",
-          language: "JavaScript",
-          current_question_count: 4,
-          questions_limit: 5,
-          created_at: new Date().toISOString(),
-          start_time: new Date(Date.now() - 3600000).toISOString(),
-          end_time: new Date().toISOString(),
-        },
-        {
-          id: "fallback-2",
-          role_type: "Fullstack Developer",
-          category: "system-design",
-          language: "TypeScript",
-          current_question_count: 2,
-          questions_limit: 5,
-          created_at: new Date(Date.now() - 86400000).toISOString(),
-          start_time: new Date(Date.now() - 86400000).toISOString(),
-          end_time: null,
-        }
-      ];
-      
-      setSessions(fallbackSessions);
+      toast.error(error.message || 'Failed to load interview history');
     } finally {
       setLoading(false);
     }
@@ -112,6 +78,58 @@ const History = () => {
     }
   };
 
+  const clearAllSessions = async () => {
+    if (!user) return;
+    
+    try {
+      setLoading(true);
+      
+      // Get all session IDs
+      const { data: sessionIds, error: fetchError } = await supabase
+        .from('interview_sessions')
+        .select('id')
+        .eq('user_id', user.id);
+        
+      if (fetchError) throw fetchError;
+      
+      if (sessionIds && sessionIds.length > 0) {
+        // Delete all messages for these sessions
+        const { error: messagesError } = await supabase
+          .from('interview_messages')
+          .delete()
+          .in('session_id', sessionIds.map(s => s.id));
+          
+        if (messagesError) throw messagesError;
+        
+        // Delete any analysis for these sessions
+        const { error: analysisError } = await supabase
+          .from('interview_analysis')
+          .delete()
+          .in('session_id', sessionIds.map(s => s.id));
+          
+        if (analysisError) throw analysisError;
+        
+        // Delete all sessions
+        const { error: sessionsError } = await supabase
+          .from('interview_sessions')
+          .delete()
+          .eq('user_id', user.id);
+          
+        if (sessionsError) throw sessionsError;
+        
+        toast.success('All interview sessions cleared');
+        setSessions([]);
+      } else {
+        toast.info('No sessions to clear');
+      }
+    } catch (error: any) {
+      console.error('Error clearing all sessions:', error);
+      toast.error(error.message || 'Failed to clear all sessions');
+    } finally {
+      setLoading(false);
+    }
+  };
+
   const getCategoryColor = (category: string) => {
     const categories: Record<string, string> = {
       'algorithms': 'bg-purple-100 text-purple-800',
@@ -122,7 +140,6 @@ const History = () => {
       'backend': 'bg-green-100 text-green-800',
       'fullstack': 'bg-amber-100 text-amber-800',
       'voice-interview': 'bg-pink-100 text-pink-800',
-      'general': 'bg-slate-100 text-slate-800',
     };
     
     return categories[category] || 'bg-gray-100 text-gray-800';
@@ -166,7 +183,16 @@ const History = () => {
       <main className="flex-1 container py-8 px-4 md:px-6">
         <div className="flex justify-between items-center mb-6">
           <h1 className="text-3xl font-bold">Interview History</h1>
-          <Button onClick={() => navigate('/interview/new')}>Start New Interview</Button>
+          <div className="flex space-x-2">
+            <Button onClick={() => navigate('/interview/new')}>Start New Interview</Button>
+            <Button 
+              variant="outline" 
+              onClick={clearAllSessions}
+              disabled={loading || sessions.length === 0}
+            >
+              Clear All History
+            </Button>
+          </div>
         </div>
         
         {loading ? (
@@ -188,15 +214,14 @@ const History = () => {
           <div className="grid gap-6 md:grid-cols-2 lg:grid-cols-3">
             {sessions.map((session) => {
               const { status, icon, buttonText, action } = getSessionStatusInfo(session);
-              const category = session.category || 'general';
               
               return (
                 <Card key={session.id} className="hover:shadow-md transition-shadow">
                   <CardHeader className="pb-2">
                     <div className="flex justify-between items-start">
                       <CardTitle>{session.role_type}</CardTitle>
-                      <Badge variant="outline" className={getCategoryColor(category)}>
-                        {category}
+                      <Badge variant="outline" className={getCategoryColor(session.category)}>
+                        {session.category}
                       </Badge>
                     </div>
                     <CardDescription className="flex items-center gap-1">
@@ -214,7 +239,7 @@ const History = () => {
                       <div className="space-y-1">
                         <div className="flex items-center justify-between text-sm">
                           <span>Progress:</span>
-                          <span>{session.current_question_count || 0}/{session.questions_limit || 5}</span>
+                          <span>{session.current_question_count || 0}/{session.questions_limit}</span>
                         </div>
                         <Progress value={calculateProgress(session)} className="h-2" />
                       </div>
@@ -275,22 +300,6 @@ const History = () => {
           </div>
         )}
       </main>
-
-      <Dialog open={isErrorDialogOpen} onOpenChange={setIsErrorDialogOpen}>
-        <DialogContent>
-          <DialogHeader>
-            <DialogTitle>Error</DialogTitle>
-            <DialogDescription>
-              {error || 'An error occurred while loading the interview history.'}
-            </DialogDescription>
-          </DialogHeader>
-          <div className="flex justify-end">
-            <Button onClick={() => setIsErrorDialogOpen(false)}>
-              Dismiss
-            </Button>
-          </div>
-        </DialogContent>
-      </Dialog>
     </div>
   );
 };

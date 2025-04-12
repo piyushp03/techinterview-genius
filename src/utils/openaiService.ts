@@ -1,4 +1,3 @@
-
 import { toast } from 'sonner';
 
 // OpenAI API Key (hardcoded for testing purposes only - kept from original file)
@@ -72,61 +71,66 @@ export async function getChatCompletion(
 /**
  * Generate a technical interview question based on parameters
  */
-export async function generateInterviewQuestion(
+export const generateInterviewQuestion = async (
   role: string,
   category: string,
   previousQuestions: string[] = [],
-  resumeText?: string | any,
-  customTopics?: string[],
-  questionType: 'objective' | 'subjective' | 'mixed' = 'mixed',
-  isCodingEnabled: boolean = false
-): Promise<string> {
-  const systemPrompt = `You are an experienced technical interviewer conducting an interview for a ${role} role. 
-  Focus on ${category} questions that are challenging but fair. 
-  ${resumeText ? "Consider the candidate's background from their resume." : ""}
-  ${customTopics?.length ? 'Focus on these specific topics: ' + customTopics.join(', ') : ''}
-  ${isCodingEnabled ? 'Include coding challenges that can be solved in a web-based editor.' : 'Do not include coding challenges that require an editor.'}
-  
-  Question format: ${questionType === 'objective' 
-    ? 'Create multiple-choice questions with 4 options and clearly mark the correct answer.' 
-    : questionType === 'subjective'
-      ? 'Ask open-ended questions that require detailed explanations.'
-      : 'Mix both multiple-choice and open-ended questions.'
-  }
-  
-  Ask one clear, specific question at a time. Follow up on previous answers to create a coherent interview flow.`;
+  resumeData?: any,
+  customTopics?: string[]
+): Promise<string> => {
+  try {
+    console.log("Generating interview question for:", role, category);
+    
+    // Use hardcoded OpenAI API key for interview question generation
+    const OPENAI_API_KEY = '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';
+    
+    // Optional: Include custom topics in the prompt if provided
+    let customTopicsPrompt = '';
+    if (customTopics && customTopics.length > 0) {
+      customTopicsPrompt = `\nPlease focus on these specific topics if possible: ${customTopics.join(', ')}.`;
+    }
 
-  const messages: ChatMessage[] = [
-    { role: 'system', content: systemPrompt },
-  ];
+    // Prepare previous questions to avoid repetition
+    const previousQuestionsText = previousQuestions.length > 0 
+      ? `\nAvoid repeating these previous questions: ${JSON.stringify(previousQuestions)}`
+      : '';
+    
+    // Create a stronger system prompt for better questions
+    const systemPrompt = `You are an expert technical interviewer for ${role} positions. 
+    Generate a challenging interview question about ${category} that would be appropriate for a job interview.
+    Make the question specific, technical, and designed to test the candidate's knowledge.
+    The question should be concise and clear.${customTopicsPrompt}${previousQuestionsText}`;
 
-  if (resumeText) {
-    messages.push({
-      role: 'user',
-      content: `Here is the candidate's resume: ${typeof resumeText === 'string' ? resumeText : JSON.stringify(resumeText)}`,
+    const response = await fetch('https://api.openai.com/v1/chat/completions', {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+        'Authorization': `Bearer ${OPENAI_API_KEY}`
+      },
+      body: JSON.stringify({
+        model: 'gpt-4o-mini',
+        messages: [
+          { role: 'system', content: systemPrompt },
+          { role: 'user', content: `Generate a challenging ${category} interview question for a ${role} position.` }
+        ],
+        temperature: 0.7,
+        max_tokens: 500
+      })
     });
-    messages.push({
-      role: 'assistant',
-      content: "I'll tailor questions based on this background.",
-    });
+
+    if (!response.ok) {
+      throw new Error(`OpenAI API Error: ${response.status} ${response.statusText}`);
+    }
+
+    const data = await response.json();
+    console.log("Question generated successfully");
+    return data.choices[0].message.content.trim();
+  } catch (error) {
+    console.error("Error generating interview question:", error);
+    // Provide a fallback question if the API call fails
+    return `Tell me about your experience with ${category} in a ${role} position?`;
   }
-
-  if (previousQuestions.length > 0) {
-    messages.push({
-      role: 'user',
-      content: `Previous questions and answers in this interview: ${previousQuestions.join(' | ')}`,
-    });
-  }
-
-  messages.push({
-    role: 'user',
-    content: `Generate a challenging ${category} interview question for a ${role} role. ${questionType === 'objective' ? 'Make it multiple choice with 4 options.' : questionType === 'subjective' ? 'Make it open-ended.' : ''}`,
-  });
-
-  return getChatCompletion(messages, {
-    temperature: 0.8,
-  });
-}
+};
 
 /**
  * Generate an objective multiple-choice question

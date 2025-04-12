@@ -38,7 +38,7 @@ function App() {
         <Route path="/resume" element={<ProtectedRoute><Resume /></ProtectedRoute>} />
         <Route path="/new-interview" element={<ProtectedRoute><NewInterview /></ProtectedRoute>} />
         <Route path="/interview/:id" element={<ProtectedRoute><InterviewSession /></ProtectedRoute>} />
-        <Route path="/interview/results/:id" element={<ProtectedRoute><InterviewResultsPage /></ProtectedRoute>} />
+        <Route path="/results/:id" element={<ProtectedRoute><InterviewResultsPage /></ProtectedRoute>} />
         <Route path="/daily-challenge" element={<ProtectedRoute><DailyChallenge /></ProtectedRoute>} />
         <Route path="*" element={<NotFound />} />
       </Routes>

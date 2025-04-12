@@ -1,4 +1,3 @@
-
 import React, { useState, useEffect } from 'react';
 import { useAuth } from '@/context/AuthContext';
 import { Card, CardContent, CardDescription, CardFooter, CardHeader, CardTitle } from '@/components/ui/card';
@@ -85,14 +84,14 @@ const DailyChallenge: React.FC<DailyChallengeProps> = ({ standalone = false }) =
         const newAttempt = await getUserChallengeAttempt(user.id, challenge.id);
         setUserAttempt(newAttempt);
         
-        if (result.isSolved) {
+        if (result.is_solved) {
           toast.success('Congratulations! Your solution is correct.');
           setActiveTab('solution');
         } else {
           toast.warning('Your solution needs more work. Check the feedback for details.');
         }
       } else {
-        toast.error(result.feedback || 'Failed to evaluate your solution');
+        toast.error(result.message || 'Failed to evaluate your solution');
       }
     } catch (error) {
       console.error('Error submitting solution:', error);

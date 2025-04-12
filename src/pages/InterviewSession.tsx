@@ -1,4 +1,3 @@
-
 import React, { useState, useEffect, useRef } from 'react';
 import { useParams, useNavigate } from 'react-router-dom';
 import { useAuth } from '@/context/AuthContext';
@@ -29,12 +28,17 @@ const InterviewSession = () => {
   const [questionCount, setQuestionCount] = useState(0);
   const timerRef = useRef<number | null>(null);
   const [isCompleted, setIsCompleted] = useState(false);
+  const [hasAttemptedAtLeastOne, setHasAttemptedAtLeastOne] = useState(false);
 
   useEffect(() => {
     const fetchSessionData = async () => {
       if (!id) return;
       
       try {
+        setLoading(true);
+        
+        console.log("Fetching interview session:", id);
+        
         const { data, error } = await supabase
           .from('interview_sessions')
           .select('*')
@@ -69,6 +73,8 @@ const InterviewSession = () => {
           setIsCompleted(true);
         }
         
+        console.log("Fetching interview messages for session:", id);
+        
         const { data: messagesData, error: messagesError } = await supabase
           .from('interview_messages')
           .select('*')
@@ -78,8 +84,14 @@ const InterviewSession = () => {
         if (messagesError) throw messagesError;
         
         if (messagesData.length > 0) {
+          console.log("Found", messagesData.length, "messages");
           setMessages(messagesData);
+          
+          // Check if there's at least one user message
+          const hasUserMessage = messagesData.some(msg => !msg.is_bot);
+          setHasAttemptedAtLeastOne(hasUserMessage);
         } else {
+          console.log("No messages found, generating first question");
           await generateFirstQuestion(data);
         }
       } catch (error: any) {
@@ -124,14 +136,38 @@ const InterviewSession = () => {
   const generateFirstQuestion = async (sessionData: any) => {
     setIsProcessing(true);
     try {
-      const initialQuestion = await generateInterviewQuestion(
-        sessionData.role_type,
-        sessionData.category,
-        [],
-        sessionData.resume_data,
-      );
+      console.log("Generating first question for new session");
+      
+      // Try up to 3 times to generate a question
+      let initialQuestion = '';
+      let attempts = 0;
+      
+      while (!initialQuestion && attempts < 3) {
+        attempts++;
+        console.log(`Attempt ${attempts} to generate question`);
+        
+        initialQuestion = await generateInterviewQuestion(
+          sessionData.role_type,
+          sessionData.category,
+          [],
+          sessionData.resume_data,
+        );
+        
+        if (!initialQuestion || initialQuestion.trim() === '') {
+          console.log("Failed to generate question, retrying...");
+          await new Promise(resolve => setTimeout(resolve, 1000)); // Wait 1 second before retry
+        }
+      }
+      
+      // If still no question, use a default one
+      if (!initialQuestion || initialQuestion.trim() === '') {
+        console.log("Using fallback question after multiple attempts");
+        initialQuestion = `Can you tell me about your experience with ${sessionData.category} in ${sessionData.role_type} roles?`;
+      }
       
       const welcomeMessage = `Hello! I'll be your technical interviewer today. We'll focus on ${sessionData.category} questions for a ${sessionData.role_type} role using ${sessionData.language}.\n\n${initialQuestion}`;
+      
+      console.log("Saving initial message to database");
       
       const { data, error } = await supabase
         .from('interview_messages')
@@ -148,6 +184,8 @@ const InterviewSession = () => {
       
       await updateQuestionCount(1);
       setQuestionCount(1);
+      
+      console.log("First question generated and saved successfully");
     } catch (error: any) {
       console.error('Error generating first question:', error);
       toast.error('Failed to generate interview question');
@@ -161,6 +199,8 @@ const InterviewSession = () => {
     
     setIsProcessing(true);
     try {
+      console.log("Sending user message");
+      
       const { data: userMessage, error: userError } = await supabase
         .from('interview_messages')
         .insert({
@@ -174,12 +214,15 @@ const InterviewSession = () => {
       
       setMessages(prev => [...prev, userMessage[0]]);
       setInput('');
+      setHasAttemptedAtLeastOne(true);
       
       const previousQuestions = messages
         .filter(msg => msg.is_bot)
         .map(msg => msg.content);
       
       if (questionCount >= sessionData.questions_limit) {
+        console.log("Question limit reached, ending interview");
+        
         const { data: finalMessage, error: finalError } = await supabase
           .from('interview_messages')
           .insert({
@@ -195,6 +238,8 @@ const InterviewSession = () => {
         await endInterview();
         return;
       }
+      
+      console.log("Generating AI response");
       
       const aiResponse = await generateInterviewQuestion(
         sessionData.role_type,
@@ -218,6 +263,8 @@ const InterviewSession = () => {
       
       await updateQuestionCount(questionCount + 1);
       setQuestionCount(prev => prev + 1);
+      
+      console.log("AI response generated and saved successfully");
     } catch (error: any) {
       console.error('Error processing message:', error);
       toast.error('Failed to get AI response');
@@ -228,10 +275,14 @@ const InterviewSession = () => {
 
   const updateQuestionCount = async (count: number) => {
     try {
-      await supabase
+      console.log("Updating question count to:", count);
+      
+      const { error } = await supabase
         .from('interview_sessions')
         .update({ current_question_count: count })
         .eq('id', id);
+        
+      if (error) throw error;
     } catch (error) {
       console.error('Error updating question count:', error);
     }
@@ -239,6 +290,8 @@ const InterviewSession = () => {
 
   const endInterview = async () => {
     try {
+      console.log("Ending interview session");
+      
       await supabase
         .from('interview_sessions')
         .update({ end_time: new Date().toISOString() })
@@ -250,7 +303,20 @@ const InterviewSession = () => {
         window.clearInterval(timerRef.current);
       }
       
-      toast.success('Interview session completed');
+      // Only show results if at least one question was attempted
+      if (hasAttemptedAtLeastOne) {
+        toast.success('Interview completed! Redirecting to results...');
+        setTimeout(() => {
+          navigate(`/interview/results/${id}`);
+        }, 1500);
+      } else {
+        toast.success('Interview session ended');
+        setTimeout(() => {
+          navigate('/dashboard');
+        }, 1500);
+      }
+      
+      console.log("Interview ended successfully");
     } catch (error: any) {
       console.error('Error ending interview:', error);
       toast.error('Failed to end interview session');
@@ -281,6 +347,14 @@ const InterviewSession = () => {
 
   const handleCodeChange = (newCode: string) => {
     setCodeValue(newCode);
+  };
+  
+  const forceRedirectToResults = () => {
+    if (hasAttemptedAtLeastOne) {
+      navigate(`/interview/results/${id}`);
+    } else {
+      navigate('/dashboard');
+    }
   };
 
   if (loading) {
@@ -336,7 +410,7 @@ const InterviewSession = () => {
               </div>
               <div>
                 {isCompleted ? (
-                  <Button variant="outline" onClick={() => navigate('/history')}>
+                  <Button variant="outline" onClick={forceRedirectToResults}>
                     View Interview Results
                   </Button>
                 ) : (
