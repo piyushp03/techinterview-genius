@@ -6,8 +6,9 @@ import { supabase } from '@/integrations/supabase/client';
 import Navbar from '@/components/Navbar';
 import InterviewResults from '@/components/InterviewResults';
 import { Button } from '@/components/ui/button';
-import { ArrowLeft } from 'lucide-react';
+import { ArrowLeft, Eye, EyeOff } from 'lucide-react';
 import { toast } from 'sonner';
+import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogDescription } from '@/components/ui/dialog';
 
 const InterviewResultsPage = () => {
   const { id } = useParams<{ id: string }>();
@@ -15,32 +16,44 @@ const InterviewResultsPage = () => {
   const { user } = useAuth();
   const [loading, setLoading] = useState(true);
   const [sessionData, setSessionData] = useState<any>(null);
+  const [error, setError] = useState<string | null>(null);
+  const [isDialogOpen, setIsDialogOpen] = useState(false);
+  const [showResults, setShowResults] = useState(true);
 
   useEffect(() => {
     const fetchSessionData = async () => {
       if (!id || !user) return;
       
       try {
+        setLoading(true);
+        
         const { data, error } = await supabase
           .from('interview_sessions')
           .select('*')
           .eq('id', id)
           .eq('user_id', user.id)
-          .single();
+          .maybeSingle();
         
-        if (error) throw error;
-        
-        if (!data) {
-          toast.error('Interview session not found');
-          navigate('/history');
-          return;
+        if (error) {
+          console.error('Error fetching interview session:', error);
+          setError('Failed to load interview session');
+          setIsDialogOpen(true);
+        } else if (!data) {
+          setError('Interview session not found');
+          setIsDialogOpen(true);
+        } else {
+          setSessionData(data);
+          
+          // Check if the interview has been completed
+          if (!data.end_time) {
+            navigate(`/interview/${id}`);
+            toast.info('This interview session is still in progress');
+          }
         }
-        
-        setSessionData(data);
       } catch (error: any) {
         console.error('Error fetching interview session:', error);
-        toast.error('Failed to load interview session');
-        navigate('/history');
+        setError('Failed to load interview session');
+        setIsDialogOpen(true);
       } finally {
         setLoading(false);
       }
@@ -48,6 +61,15 @@ const InterviewResultsPage = () => {
     
     fetchSessionData();
   }, [id, user, navigate]);
+
+  const handleCloseDialog = () => {
+    setIsDialogOpen(false);
+    navigate('/history');
+  };
+
+  const toggleResultsView = () => {
+    setShowResults(!showResults);
+  };
 
   if (loading) {
     return (
@@ -73,14 +95,45 @@ const InterviewResultsPage = () => {
               Back to History
             </Button>
           </div>
-          <div>
-            <h2 className="text-xl font-semibold">{sessionData?.role_type} Interview Results</h2>
-            <p className="text-sm text-muted-foreground">Category: {sessionData?.category}, Language: {sessionData?.language}</p>
-          </div>
+          {sessionData && (
+            <div>
+              <h2 className="text-xl font-semibold">{sessionData?.role_type} Interview Results</h2>
+              <p className="text-sm text-muted-foreground">Category: {sessionData?.category}, Language: {sessionData?.language}</p>
+            </div>
+          )}
+          <Button variant="outline" onClick={toggleResultsView}>
+            {showResults ? (
+              <>
+                <EyeOff className="h-4 w-4 mr-2" />
+                Hide Results
+              </>
+            ) : (
+              <>
+                <Eye className="h-4 w-4 mr-2" />
+                Show Results
+              </>
+            )}
+          </Button>
         </div>
         
-        <InterviewResults sessionId={id || ''} />
+        {id && showResults && <InterviewResults sessionId={id} />}
       </main>
+
+      <Dialog open={isDialogOpen} onOpenChange={setIsDialogOpen}>
+        <DialogContent>
+          <DialogHeader>
+            <DialogTitle>Error</DialogTitle>
+            <DialogDescription>
+              {error || 'An error occurred while loading the interview results.'}
+            </DialogDescription>
+          </DialogHeader>
+          <div className="flex justify-end">
+            <Button onClick={handleCloseDialog}>
+              Return to History
+            </Button>
+          </div>
+        </DialogContent>
+      </Dialog>
     </div>
   );
 };
