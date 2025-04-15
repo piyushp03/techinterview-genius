@@ -1,161 +1,124 @@
 
-import { useState } from 'react';
-import { Upload, File, X } from 'lucide-react';
+import React, { useState, useCallback } from 'react';
+import { useDropzone } from 'react-dropzone';
 import { Button } from '@/components/ui/button';
-import { Input } from '@/components/ui/input';
-import { Card, CardContent, CardDescription, CardFooter, CardHeader, CardTitle } from '@/components/ui/card';
+import { Textarea } from '@/components/ui/textarea';
+import { Upload, FileText, Check, Loader2 } from 'lucide-react';
 import { toast } from 'sonner';
 
-export interface ResumeUploaderProps {
-  onResumeData?: (resumeText: string) => Promise<void>;
-  onResumeProcessed?: (resumeText: string) => Promise<void>;
+interface ResumeUploaderProps {
+  onResumeData: (text: string) => void;
 }
 
-const ResumeUploader = ({ onResumeData, onResumeProcessed }: ResumeUploaderProps) => {
-  const [file, setFile] = useState<File | null>(null);
-  const [isUploading, setIsUploading] = useState(false);
-  const [resumeText, setResumeText] = useState('');
-  const [isEditing, setIsEditing] = useState(false);
-  
-  const handleFileChange = (e: React.ChangeEvent<HTMLInputElement>) => {
-    if (e.target.files && e.target.files[0]) {
-      setFile(e.target.files[0]);
-      readFile(e.target.files[0]);
-    }
-  };
-  
-  const readFile = (file: File) => {
-    const reader = new FileReader();
-    reader.onload = async (e) => {
-      if (e.target?.result) {
-        const text = e.target.result as string;
-        setResumeText(text);
-      }
-    };
-    reader.readAsText(file);
-  };
-  
-  const handleRemoveFile = () => {
-    setFile(null);
-    setResumeText('');
-  };
-  
-  const handleProcess = async () => {
-    if (!resumeText.trim()) {
-      toast.error('Please upload or paste your resume content');
-      return;
-    }
+const ResumeUploader: React.FC<ResumeUploaderProps> = ({ onResumeData }) => {
+  const [resumeText, setResumeText] = useState<string>('');
+  const [isUploaded, setIsUploaded] = useState<boolean>(false);
+  const [isLoading, setIsLoading] = useState<boolean>(false);
+
+  const onDrop = useCallback(async (acceptedFiles: File[]) => {
+    if (acceptedFiles.length === 0) return;
     
-    setIsUploading(true);
+    const file = acceptedFiles[0];
+    setIsLoading(true);
+    
     try {
-      // Call the appropriate callback based on which one is provided
-      if (onResumeData) {
-        await onResumeData(resumeText);
-      } 
-      
-      if (onResumeProcessed) {
-        await onResumeProcessed(resumeText);
-      }
-      
-      toast.success('Resume processed successfully');
+      // Simple text reading - in a real app, you would have proper file parsing
+      const text = await readFileAsText(file);
+      setResumeText(text);
+      onResumeData(text);
+      setIsUploaded(true);
+      toast.success('Resume uploaded successfully');
     } catch (error) {
-      console.error('Error processing resume:', error);
-      toast.error('Error processing your resume');
+      console.error('Error reading file:', error);
+      toast.error('Failed to read resume file');
     } finally {
-      setIsUploading(false);
+      setIsLoading(false);
+    }
+  }, [onResumeData]);
+
+  const { getRootProps, getInputProps, isDragActive } = useDropzone({
+    onDrop,
+    accept: {
+      'text/plain': ['.txt'],
+      'application/pdf': ['.pdf'],
+      'application/msword': ['.doc'],
+      'application/vnd.openxmlformats-officedocument.wordprocessingml.document': ['.docx']
+    },
+    maxFiles: 1
+  });
+
+  const handleManualInput = (e: React.ChangeEvent<HTMLTextAreaElement>) => {
+    const text = e.target.value;
+    setResumeText(text);
+    onResumeData(text);
+    if (text.trim()) {
+      setIsUploaded(true);
+    } else {
+      setIsUploaded(false);
     }
   };
-  
+
+  const readFileAsText = (file: File): Promise<string> => {
+    return new Promise((resolve, reject) => {
+      const reader = new FileReader();
+      reader.onload = () => {
+        resolve(reader.result as string);
+      };
+      reader.onerror = () => {
+        reject(new Error('Failed to read file'));
+      };
+      reader.readAsText(file);
+    });
+  };
+
   return (
-    <Card>
-      <CardHeader>
-        <CardTitle>Upload Your Resume</CardTitle>
-        <CardDescription>
-          Upload a text resume or paste your resume content directly
-        </CardDescription>
-      </CardHeader>
-      
-      <CardContent className="space-y-4">
-        <div className="grid w-full max-w-sm items-center gap-1.5">
-          <Input
-            type="file"
-            id="resume"
-            accept=".txt,.pdf,.doc,.docx"
-            onChange={handleFileChange}
-            className="cursor-pointer"
-          />
-        </div>
-        
-        {file && (
-          <div className="flex items-center justify-between rounded-md border p-4">
-            <div className="flex items-center space-x-2">
-              <File className="h-8 w-8 text-blue-500" />
-              <div>
-                <p className="text-sm font-medium">{file.name}</p>
-                <p className="text-xs text-muted-foreground">
-                  {(file.size / 1024).toFixed(2)} KB
-                </p>
-              </div>
+    <div className="space-y-4">
+      <div 
+        {...getRootProps()} 
+        className={`p-4 border-2 border-dashed rounded-md text-center cursor-pointer transition-colors
+          ${isDragActive ? 'border-primary bg-primary/10' : 'border-muted-foreground/20 hover:border-primary/50'}`}
+      >
+        <input {...getInputProps()} />
+        <div className="flex flex-col items-center justify-center gap-2">
+          <Upload className="h-8 w-8 text-muted-foreground" />
+          {isLoading ? (
+            <div className="flex items-center gap-2">
+              <Loader2 className="h-4 w-4 animate-spin" />
+              <p>Processing...</p>
             </div>
-            <Button variant="ghost" size="icon" onClick={handleRemoveFile}>
-              <X className="h-4 w-4" />
-            </Button>
-          </div>
-        )}
-        
-        <div>
-          <div className="flex items-center justify-between mb-2">
-            <p className="text-sm font-medium">Resume Content</p>
-            <Button 
-              variant="ghost" 
-              size="sm" 
-              onClick={() => setIsEditing(!isEditing)}
-            >
-              {isEditing ? 'Done' : 'Edit'}
-            </Button>
-          </div>
-          
-          {isEditing ? (
-            <textarea
-              className="w-full min-h-[200px] p-3 border rounded-md font-mono text-sm"
-              value={resumeText}
-              onChange={(e) => setResumeText(e.target.value)}
-              placeholder="Paste your resume content here..."
-            />
+          ) : isDragActive ? (
+            <p>Drop your resume file here...</p>
           ) : (
-            <div className="w-full min-h-[200px] max-h-[400px] overflow-y-auto p-3 border rounded-md font-mono text-sm">
-              {resumeText ? (
-                <pre className="whitespace-pre-wrap">{resumeText}</pre>
-              ) : (
-                <p className="text-muted-foreground">
-                  Upload a file or paste your resume content here...
-                </p>
-              )}
+            <div>
+              <p className="text-sm text-muted-foreground">
+                Drag & drop your resume file here, or click to select
+              </p>
+              <p className="text-xs text-muted-foreground mt-1">
+                Supports: TXT, PDF, DOC, DOCX
+              </p>
             </div>
           )}
         </div>
-      </CardContent>
-      
-      <CardFooter>
-        <Button 
-          onClick={handleProcess} 
-          disabled={isUploading || !resumeText.trim()}
-          className="w-full"
-        >
-          {isUploading ? (
-            <>
-              <span className="mr-2 h-4 w-4 animate-spin rounded-full border-2 border-white border-t-transparent" />
-              Processing...
-            </>
-          ) : (
-            <>
-              <Upload className="mr-2 h-4 w-4" />
-              Process Resume
-            </>
+      </div>
+
+      <div>
+        <div className="flex items-center justify-between mb-2">
+          <h4 className="text-sm font-medium">Resume Content</h4>
+          {isUploaded && (
+            <span className="flex items-center text-xs text-green-600">
+              <Check className="w-3 h-3 mr-1" />
+              Resume ready for analysis
+            </span>
           )}
-        </Button>
-      </CardFooter>
-    </Card>
+        </div>
+        <Textarea
+          placeholder="Or paste your resume content here..."
+          className="min-h-[150px] font-mono text-sm"
+          value={resumeText}
+          onChange={handleManualInput}
+        />
+      </div>
+    </div>
   );
 };
 

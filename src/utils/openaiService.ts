@@ -1,4 +1,3 @@
-
 // Types
 export interface InterviewQuestion {
   question: string;
@@ -31,85 +30,63 @@ const API_KEY = "sk-proj-XNKhGljxs1DhEQOjiw575JznsUEt5VbSs45dzs90PV9brFYR6XKPXO1
 export const generateInterviewQuestion = async (
   role: string,
   category: string,
-  previousQuestions: string[] = [],
-  resumeText?: string | null,
-  customTopics?: string[] | null
+  previousQuestions: string[],
+  resumeText?: string
 ): Promise<string> => {
-  console.log(`Generating interview question for ${role} in ${category} category`);
-  
   try {
-    // In a real implementation, this would call the OpenAI API
-    // For demo purposes, we'll return a hard-coded response
-    const questions = {
-      frontend: [
-        "Can you explain the difference between controlled and uncontrolled components in React?",
-        "How do you optimize performance in a React application?",
-        "Explain how CSS Grid and Flexbox differ and when you would use each.",
-        "What are React hooks and how have they changed React development?",
-        "Describe your approach to making websites responsive and accessible."
+    console.log(`Generating interview question for ${role} role in ${category} category`);
+    
+    // In a production environment, this would call OpenAI API
+    // For now, we'll use mock data
+    
+    const questionsByCategory: Record<string, string[]> = {
+      'algorithms': [
+        "Can you explain how you would implement a quicksort algorithm and analyze its time complexity?",
+        "How would you design an algorithm to find the kth largest element in an unsorted array?",
+        "Explain how you would approach solving a dynamic programming problem like the knapsack problem.",
+        "How would you implement a breadth-first search algorithm for a graph? What's its time complexity?",
+        "Describe how you would detect a cycle in a linked list using O(1) space complexity."
       ],
-      backend: [
-        "Describe how you would design a REST API for a social media application.",
-        "How would you handle database migrations in a production environment?",
-        "Explain the concept of middleware in server applications.",
-        "What techniques would you use to optimize database query performance?",
-        "How would you implement authentication and authorization in a web API?"
-      ],
-      fullstack: [
-        "How do you manage state between frontend and backend systems?",
-        "Describe your approach to designing and implementing a full-stack application.",
-        "How would you handle error reporting across a full-stack application?",
-        "What strategies would you use to ensure consistent data validation between frontend and backend?",
-        "How would you architect a real-time notification system?"
-      ],
-      behavioral: [
-        "Tell me about a challenging project you worked on and how you approached it.",
-        "Describe a situation where you had to work under pressure to meet a deadline.",
-        "How do you handle conflicting priorities or disagreements on a team?",
-        "Tell me about a time you received difficult feedback and how you responded to it.",
-        "How do you stay updated with the latest technologies and industry trends?"
-      ],
-      algorithms: [
-        "How would you implement a function to check if a string is a palindrome?",
-        "Can you explain how you would solve the two-sum problem?",
-        "Describe an algorithm to find the first non-repeating character in a string.",
-        "How would you implement a basic caching mechanism for expensive operations?",
-        "Explain how you would approach solving a dynamic programming problem."
-      ],
-      "system-design": [
+      'system-design': [
         "How would you design a URL shortening service like bit.ly?",
-        "Design a simple version of a distributed file storage system.",
-        "How would you architect a notification service that needs to send millions of notifications per day?",
-        "Design a basic e-commerce checkout system.",
-        "How would you design a real-time chat application?"
+        "Design a distributed cache system with high availability and consistency requirements.",
+        "How would you architect a real-time notification system that can scale to millions of users?",
+        "Design a system for a ride-sharing application like Uber or Lyft.",
+        "How would you design a service that stores and processes large amounts of user-generated images?"
+      ],
+      'behavioral': [
+        "Tell me about a challenging project you worked on and how you overcame obstacles.",
+        "Describe a situation where you had a conflict with a team member and how you resolved it.",
+        "How do you prioritize tasks when working on multiple projects with tight deadlines?",
+        "Tell me about a time you received critical feedback and how you responded to it.",
+        "Describe a situation where you had to make a difficult technical decision with limited information."
+      ],
+      'language-specific': [
+        "What are closures in JavaScript and how would you use them in practical scenarios?",
+        "Explain the difference between == and === in JavaScript and when you would use each.",
+        "How does React's virtual DOM work and why is it beneficial for performance?",
+        "Explain the concept of promises in JavaScript and how they differ from callbacks.",
+        "What are React hooks and how have they changed state management in functional components?"
       ]
     };
     
-    // Select questions based on category
-    const categoryQuestions = questions[category as keyof typeof questions] || questions.frontend;
+    // Make sure we have questions for this category
+    const questionsPool = questionsByCategory[category] || questionsByCategory['behavioral'];
     
-    // Filter out previously asked questions
-    const availableQuestions = categoryQuestions.filter(q => !previousQuestions.includes(q));
+    // Filter out questions that have already been asked
+    const availableQuestions = questionsPool.filter(q => !previousQuestions.includes(q));
     
-    // If we have custom topics, prioritize them (in a real implementation)
-    if (customTopics && customTopics.length > 0) {
-      console.log("Using custom topics:", customTopics);
+    // If we've asked all questions, shuffle and start over
+    if (availableQuestions.length === 0) {
+      return "Thank you for your responses so far. Let's wrap up this interview. Is there anything you'd like to ask me about the role or company?";
     }
     
-    // If we have resume text, personalize the question (in a real implementation)
-    if (resumeText) {
-      console.log("Using resume text for personalization");
-    }
-    
-    // Return a random question, or a default if all have been asked
-    if (availableQuestions.length > 0) {
-      return availableQuestions[Math.floor(Math.random() * availableQuestions.length)];
-    } else {
-      return "Based on your experience, what do you consider the most challenging aspect of software development and how do you address it?";
-    }
+    // Pick a random question from available ones
+    const randomIndex = Math.floor(Math.random() * availableQuestions.length);
+    return availableQuestions[randomIndex];
   } catch (error) {
     console.error("Error generating interview question:", error);
-    return "Tell me about a challenging technical problem you've solved recently.";
+    return "Could you tell me about a challenging problem you solved recently and how you approached it?";
   }
 };
 
@@ -123,30 +100,72 @@ export const evaluateAnswer = async (
   category: string
 ): Promise<string> => {
   try {
-    // In a real implementation, this would call the OpenAI API
-    // For demo purposes, we'll return a hard-coded response
-    return "Your answer demonstrates good understanding of the concepts. Consider providing more specific examples in future responses to highlight your practical experience with these technologies.";
+    console.log(`Evaluating answer for ${role} role in ${category} category`);
+    console.log(`Question: ${question}`);
+    console.log(`Answer length: ${answer.length}`);
+    
+    // In a production environment, this would call OpenAI API
+    // For demo, we'll give generic feedback
+    
+    const feedbacks = [
+      "That's a solid response! I particularly liked how you explained your thought process.",
+      "Good answer. You might consider providing a more concrete example to strengthen your point.",
+      "You've covered the basics well. To make your answer stronger, try to quantify your achievements or impact.",
+      "That's a comprehensive answer. I appreciate the detail you provided about your approach.",
+      "Interesting perspective. Can you elaborate a bit more on how you handled the challenges you mentioned?"
+    ];
+    
+    const randomIndex = Math.floor(Math.random() * feedbacks.length);
+    return feedbacks[randomIndex];
   } catch (error) {
     console.error("Error evaluating answer:", error);
-    return "Thank you for your response. Let's move on to the next question.";
+    return "Thank you for your detailed response. Let's move on to the next question.";
   }
 };
 
 /**
  * Gets a chat completion from OpenAI
  */
-export const getChatCompletion = async (
-  messages: Array<{ role: string; content: string }>,
-  model: string = "gpt-4o-mini"
-): Promise<string> => {
+export const getChatCompletion = async (messages: any[]): Promise<string> => {
   try {
-    // In a real implementation, this would call the OpenAI API
-    // For demo purposes, we'll return a hard-coded response
-    console.log("Getting chat completion with messages:", messages);
-    return "This is a simulated response from the AI. In a real implementation, this would be generated by the OpenAI API based on your messages.";
+    console.log(`Getting chat completion for ${messages.length} messages`);
+    
+    // In a production environment, this would call OpenAI API
+    // For demo, we'll return a placeholder response
+    
+    const userMessage = messages[messages.length - 1]?.content || "";
+    const systemMessage = messages[0]?.content || "";
+    
+    if (userMessage.toLowerCase().includes("experience")) {
+      return "That's great experience! Could you tell me more about specific challenges you faced in those roles and how you overcame them?";
+    }
+    
+    if (userMessage.toLowerCase().includes("challenge") || userMessage.toLowerCase().includes("problem")) {
+      return "Thanks for sharing that challenge. Your approach sounds methodical. How did you measure the success of your solution?";
+    }
+    
+    if (userMessage.toLowerCase().includes("team") || userMessage.toLowerCase().includes("collaborate")) {
+      return "It sounds like you have good collaboration skills. Can you give a specific example of how you've resolved conflicts within a team?";
+    }
+    
+    if (userMessage.toLowerCase().includes("skill") || userMessage.toLowerCase().includes("technology")) {
+      return "You have an impressive skill set. How do you stay updated with the latest developments in your field?";
+    }
+    
+    // Default responses
+    const defaultResponses = [
+      "That's interesting. Could you elaborate more on your approach?",
+      "Thank you for that explanation. What would you consider your biggest strength in this area?",
+      "I see. How would you apply this knowledge in our specific context?",
+      "Great insights. How do you typically handle situations where requirements change unexpectedly?",
+      "Could you walk me through your thought process when tackling a completely new problem?"
+    ];
+    
+    const randomIndex = Math.floor(Math.random() * defaultResponses.length);
+    return defaultResponses[randomIndex];
   } catch (error) {
-    console.error("Error getting chat completion:", error);
-    return "I apologize, but I encountered an error. Please try again.";
+    console.error("Error in chat completion:", error);
+    return "I'm interested in learning more about your experience. Could you share a relevant project you've worked on?";
   }
 };
 
@@ -155,8 +174,6 @@ export const getChatCompletion = async (
  */
 export const analyzeResume = async (resumeText: string): Promise<ResumeAnalysisResult> => {
   try {
-    // In a real implementation, this would call the OpenAI API
-    // For demo purposes, we'll return a hard-coded response
     console.log("Analyzing resume of length:", resumeText.length);
     
     return {
