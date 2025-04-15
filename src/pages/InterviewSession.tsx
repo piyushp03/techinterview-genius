@@ -1,4 +1,3 @@
-
 import React, { useState, useEffect, useRef } from 'react';
 import { useParams, useNavigate } from 'react-router-dom';
 import { useAuth } from '@/context/AuthContext';
@@ -127,8 +126,7 @@ const InterviewSession = () => {
       const initialQuestion = await generateInterviewQuestion(
         sessionData.role_type,
         sessionData.category,
-        [],
-        sessionData.resume_data,
+        []
       );
       
       const welcomeMessage = `Hello! I'll be your technical interviewer today. We'll focus on ${sessionData.category} questions for a ${sessionData.role_type} role using ${sessionData.language}.\n\n${initialQuestion}`;
@@ -199,8 +197,7 @@ const InterviewSession = () => {
       const aiResponse = await generateInterviewQuestion(
         sessionData.role_type,
         sessionData.category,
-        previousQuestions,
-        sessionData.resume_data,
+        previousQuestions
       );
       
       const { data: botMessage, error: botError } = await supabase
@@ -290,6 +287,58 @@ const InterviewSession = () => {
       </div>
     );
   }
+
+  const generateAIResponse = async (userInput: string) => {
+    try {
+      // Extract previous messages for context
+      const previousQuestions = messages
+        .filter(msg => msg.is_bot)
+        .map(msg => msg.content);
+      
+      // Add the new user message
+      if (questionCount >= sessionData.questions_limit) {
+        const { data: finalMessage, error: finalError } = await supabase
+          .from('interview_messages')
+          .insert({
+            session_id: id,
+            is_bot: true,
+            content: "You've reached the end of this interview session. Thank you for your participation. You can go back to review your answers or end the session now.",
+          })
+          .select();
+        
+        if (finalError) throw finalError;
+        
+        setMessages(prev => [...prev, finalMessage[0]]);
+        await endInterview();
+        return;
+      }
+      
+      const aiResponse = await generateInterviewQuestion(
+        sessionData.role_type,
+        sessionData.category,
+        previousQuestions
+      );
+      
+      const { data: botMessage, error: botError } = await supabase
+        .from('interview_messages')
+        .insert({
+          session_id: id,
+          is_bot: true,
+          content: aiResponse,
+        })
+        .select();
+      
+      if (botError) throw botError;
+      
+      setMessages(prev => [...prev, botMessage[0]]);
+      
+      await updateQuestionCount(questionCount + 1);
+      setQuestionCount(prev => prev + 1);
+    } catch (error: any) {
+      console.error('Error processing message:', error);
+      toast.error('Failed to get AI response');
+    }
+  };
 
   return (
     <div className={`min-h-screen bg-background flex flex-col ${isFullScreen ? 'h-screen overflow-hidden' : ''}`}>

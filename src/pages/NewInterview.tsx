@@ -1,4 +1,3 @@
-
 import { useState } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { useAuth } from '@/context/AuthContext';
@@ -111,6 +110,17 @@ const NewInterview = () => {
 
     setIsLoading(true);
     try {
+      console.log("Creating interview session with:", {
+        user_id: user?.id,
+        role_type: roleType,
+        language,
+        category,
+        questions_type: questionsType,
+        time_limit: timeLimit,
+        questions_limit: questionsLimit,
+        is_coding_enabled: isCodingEnabled
+      });
+
       const { data, error } = await supabase
         .from('interview_sessions')
         .insert({
@@ -127,8 +137,12 @@ const NewInterview = () => {
         .select()
         .single();
 
-      if (error) throw error;
+      if (error) {
+        console.error("Supabase error:", error);
+        throw error;
+      }
 
+      console.log("Created session:", data);
       toast.success('Interview session created');
       navigate(`/interview/${data.id}`);
     } catch (error: any) {

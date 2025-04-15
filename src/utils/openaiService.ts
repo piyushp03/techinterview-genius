@@ -1,3 +1,4 @@
+
 // Define the interface for resume analysis results
 export interface ResumeAnalysisResult {
   analysisText: string;
@@ -158,8 +159,13 @@ function getFallbackQuestion(roleType: string, category: string): string {
     ]
   };
 
-  const categoryQuestions = fallbackQuestions[category as keyof typeof fallbackQuestions] || fallbackQuestions.behavioral;
-  return categoryQuestions[Math.floor(Math.random() * categoryQuestions.length)];
+  // Default to general questions if category is not found
+  const categoryKey = Object.keys(fallbackQuestions).find(key => 
+    category.toLowerCase().includes(key.toLowerCase())
+  ) || 'behavioral';
+  
+  const questions = fallbackQuestions[categoryKey as keyof typeof fallbackQuestions];
+  return questions[Math.floor(Math.random() * questions.length)];
 }
 
 // Helper function to get a fallback evaluation if API call fails

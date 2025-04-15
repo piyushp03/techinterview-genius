@@ -2,7 +2,7 @@
 import React, { useRef, useEffect, useState } from 'react';
 import { useCodeMirror } from '@/hooks/useCodeMirror';
 import { Light as SyntaxHighlighter } from 'react-syntax-highlighter';
-import { vs2015 } from 'react-syntax-highlighter/dist/esm/styles/prism';
+import { vs2015 } from 'react-syntax-highlighter/dist/esm/styles/hljs';
 
 interface CodeEditorProps {
   language?: string;
@@ -21,8 +21,8 @@ const CodeEditor: React.FC<CodeEditorProps> = ({
   const [code, setCode] = useState(initialCode);
   const [isEditing, setIsEditing] = useState(!readOnly);
   
-  const { view } = useCodeMirror({
-    container: editorRef.current,
+  const { view: editorView } = useCodeMirror({
+    containerRef: editorRef,
     initialDoc: initialCode,
     onChange: (value) => {
       setCode(value);
