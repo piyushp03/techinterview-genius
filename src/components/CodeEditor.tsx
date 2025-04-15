@@ -1,114 +1,91 @@
 
-import React, { useEffect, useRef, useState } from 'react';
-import { EditorView, basicSetup } from 'codemirror';
-import { javascript } from '@codemirror/lang-javascript';
-import { python } from '@codemirror/lang-python';
-import { java } from '@codemirror/lang-java';
-import { cpp } from '@codemirror/lang-cpp';
-import { EditorState } from '@codemirror/state';
-import { Card, CardContent } from '@/components/ui/card';
+import React, { useState, useEffect } from 'react';
+import { Prism as SyntaxHighlighter } from 'react-syntax-highlighter';
+import { vscDarkPlus } from 'react-syntax-highlighter/dist/esm/styles/prism';
 
 interface CodeEditorProps {
-  language: string;
-  initialCode: string;
-  onChange: (code: string) => void;
+  language?: string;
+  initialCode?: string;
+  onChange?: (code: string) => void;
   readOnly?: boolean;
 }
 
-const CodeEditor: React.FC<CodeEditorProps> = ({
+const CodeEditor: React.FC<CodeEditorProps> = ({ 
   language = 'javascript',
-  initialCode = '',
+  initialCode = '// Write your code here',
   onChange,
-  readOnly = false,
+  readOnly = false
 }) => {
-  const editorRef = useRef<HTMLDivElement>(null);
-  const editorViewRef = useRef<EditorView | null>(null);
-  const [currentLanguage, setCurrentLanguage] = useState(language);
-  const [currentCode, setCurrentCode] = useState(initialCode);
+  const [code, setCode] = useState(initialCode);
+  const [editorHeight, setEditorHeight] = useState('300px');
 
   useEffect(() => {
-    if (currentLanguage !== language) {
-      setCurrentLanguage(language);
-      if (editorViewRef.current) {
-        editorViewRef.current.destroy();
-        editorViewRef.current = null;
-      }
-    }
-  }, [language, currentLanguage]);
-
-  useEffect(() => {
-    if (initialCode !== currentCode) {
-      setCurrentCode(initialCode);
-    }
+    setCode(initialCode);
   }, [initialCode]);
 
   useEffect(() => {
-    if (editorRef.current && !editorViewRef.current) {
-      // Select the appropriate language extension
-      let langExtension;
-      switch (language) {
-        case 'python':
-          langExtension = python();
-          break;
-        case 'java':
-          langExtension = java();
-          break;
-        case 'cpp':
-          langExtension = cpp();
-          break;
-        case 'javascript':
-        default:
-          langExtension = javascript();
-          break;
-      }
+    // Adjust height based on content
+    const lineCount = (code.match(/\n/g) || []).length + 1;
+    const calculatedHeight = Math.max(300, lineCount * 20);
+    setEditorHeight(`${calculatedHeight}px`);
+  }, [code]);
 
-      // Create the editor state
-      const startState = EditorState.create({
-        doc: currentCode,
-        extensions: [
-          basicSetup,
-          langExtension,
-          EditorView.updateListener.of((update) => {
-            if (update.docChanged) {
-              const newCode = update.state.doc.toString();
-              setCurrentCode(newCode);
-              onChange(newCode);
-            }
-          }),
-          EditorView.theme({
-            "&": { height: "100%" },
-            ".cm-scroller": { overflow: "auto" },
-            ".cm-content, .cm-gutter": { minHeight: "100%" },
-            ".cm-gutters": { backgroundColor: "transparent", border: "none" },
-            ".cm-activeLineGutter": { backgroundColor: "rgba(0, 0, 0, 0.1)" },
-          }),
-          EditorView.editable.of(!readOnly),
-        ],
-      });
-
-      // Create the editor view
-      const view = new EditorView({
-        state: startState,
-        parent: editorRef.current,
-      });
-
-      editorViewRef.current = view;
-
-      return () => {
-        if (editorViewRef.current) {
-          editorViewRef.current.destroy();
-          editorViewRef.current = null;
-        }
-      };
-    }
-  }, [language, currentCode, editorRef.current, readOnly]);
+  const handleCodeChange = (e: React.ChangeEvent<HTMLTextAreaElement>) => {
+    const newCode = e.target.value;
+    setCode(newCode);
+    onChange?.(newCode);
+  };
 
   return (
-    <Card className="w-full h-full border-0 overflow-hidden">
-      <CardContent className="p-0 h-full">
-        <div ref={editorRef} className="h-full overflow-auto" />
-      </CardContent>
-    </Card>
+    <div className="relative rounded-md border">
+      <div className="flex items-center justify-between px-3 py-1 border-b bg-muted">
+        <span className="text-sm font-medium">
+          {language.charAt(0).toUpperCase() + language.slice(1)}
+        </span>
+      </div>
+
+      <div className="relative" style={{ height: editorHeight }}>
+        {readOnly ? (
+          <div className="w-full h-full p-4 overflow-auto">
+            <SyntaxHighlighter
+              language={language}
+              style={vscDarkPlus}
+              showLineNumbers
+              wrapLongLines
+            >
+              {code}
+            </SyntaxHighlighter>
+          </div>
+        ) : (
+          <>
+            <textarea
+              className="absolute inset-0 w-full h-full p-4 font-mono text-sm resize-none bg-transparent z-10"
+              value={code}
+              onChange={handleCodeChange}
+              style={{ color: 'transparent', caretColor: 'white' }}
+              readOnly={readOnly}
+            />
+            <div className="absolute inset-0 w-full h-full overflow-auto pointer-events-none">
+              <SyntaxHighlighter
+                language={language}
+                style={vscDarkPlus}
+                showLineNumbers
+                wrapLongLines
+                codeTagProps={{
+                  style: {
+                    fontFamily: 'inherit',
+                    fontSize: 'inherit',
+                    lineHeight: 'inherit',
+                  }
+                }}
+              >
+                {code}
+              </SyntaxHighlighter>
+            </div>
+          </>
+        )}
+      </div>
+    </div>
   );
 };
 
