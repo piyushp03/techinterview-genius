@@ -1,4 +1,3 @@
-
 import React, { useState, useEffect } from 'react';
 import { useAuth } from '@/context/AuthContext';
 import { supabase } from '@/integrations/supabase/client';
@@ -338,23 +337,25 @@ const InterviewResults = ({ sessionId }: { sessionId: string }) => {
         const pair = pairs[i];
         
         try {
-          const analysis = await evaluateAnswer(
+          const response = await evaluateAnswer(
             pair.question,
             pair.answer,
             session.role_type,
             session.category
           );
           
+          const parsedFeedback = typeof response === 'string' ? JSON.parse(response) : response;
+          
           analysisResults.push({
             question: pair.question,
             answer: pair.answer,
-            feedback: analysis.feedback,
-            score: analysis.score,
-            strengths: analysis.strengths,
-            areas_for_improvement: analysis.areas_for_improvement
+            feedback: parsedFeedback.feedback || '',
+            score: parsedFeedback.score || 0,
+            strengths: parsedFeedback.strengths || [],
+            areas_for_improvement: parsedFeedback.areas_for_improvement || []
           });
           
-          totalScore += analysis.score;
+          totalScore += parsedFeedback.score || 0;
         } catch (error) {
           console.error('Error analyzing answer, using fallback:', error);
           // Use fallback hardcoded analysis
