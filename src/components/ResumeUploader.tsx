@@ -1,9 +1,9 @@
 
-import React, { useState, useCallback } from 'react';
+import React, { useCallback, useState } from 'react';
 import { useDropzone } from 'react-dropzone';
-import { Button } from '@/components/ui/button';
 import { Textarea } from '@/components/ui/textarea';
-import { Upload, FileText, Check, Loader2 } from 'lucide-react';
+import { Button } from '@/components/ui/button';
+import { Upload, File, X, Loader2 } from 'lucide-react';
 import { toast } from 'sonner';
 
 interface ResumeUploaderProps {
@@ -11,30 +11,58 @@ interface ResumeUploaderProps {
 }
 
 const ResumeUploader: React.FC<ResumeUploaderProps> = ({ onResumeData }) => {
-  const [resumeText, setResumeText] = useState<string>('');
-  const [isUploaded, setIsUploaded] = useState<boolean>(false);
-  const [isLoading, setIsLoading] = useState<boolean>(false);
-
-  const onDrop = useCallback(async (acceptedFiles: File[]) => {
-    if (acceptedFiles.length === 0) return;
-    
-    const file = acceptedFiles[0];
+  const [resumeText, setResumeText] = useState('');
+  const [file, setFile] = useState<File | null>(null);
+  const [isLoading, setIsLoading] = useState(false);
+  
+  const extractTextFromFile = async (file: File) => {
     setIsLoading(true);
-    
     try {
-      // Simple text reading - in a real app, you would have proper file parsing
-      const text = await readFileAsText(file);
-      setResumeText(text);
-      onResumeData(text);
-      setIsUploaded(true);
-      toast.success('Resume uploaded successfully');
+      if (file.type === 'text/plain') {
+        // Handle text files
+        const text = await file.text();
+        setResumeText(text);
+        onResumeData(text);
+      } else if (file.type === 'application/pdf') {
+        // For PDF files, we'll just extract the text from the first few pages
+        // In a real app, you'd want to use a more robust PDF parser
+        const text = `Content extracted from PDF: ${file.name}
+        
+This is a simplified representation as we don't have a full PDF parser in this demo.
+Please enter the resume content manually or upload a text file.`;
+        setResumeText(text);
+        onResumeData(text);
+        toast.info('PDF extraction is limited in this demo. Consider pasting the text manually.');
+      } else if (
+        file.type === 'application/msword' ||
+        file.type === 'application/vnd.openxmlformats-officedocument.wordprocessingml.document'
+      ) {
+        // For Word docs, similar limitation
+        const text = `Content extracted from Word document: ${file.name}
+        
+This is a simplified representation as we don't have a full Word parser in this demo.
+Please enter the resume content manually or upload a text file.`;
+        setResumeText(text);
+        onResumeData(text);
+        toast.info('Word document extraction is limited in this demo. Consider pasting the text manually.');
+      } else {
+        toast.error('Unsupported file format. Please upload a text, PDF, DOC, or DOCX file.');
+      }
     } catch (error) {
-      console.error('Error reading file:', error);
-      toast.error('Failed to read resume file');
+      console.error('Error extracting text from file:', error);
+      toast.error('Failed to extract text from file');
     } finally {
       setIsLoading(false);
     }
-  }, [onResumeData]);
+  };
+
+  const onDrop = useCallback((acceptedFiles: File[]) => {
+    const file = acceptedFiles[0];
+    if (file) {
+      setFile(file);
+      extractTextFromFile(file);
+    }
+  }, []);
 
   const { getRootProps, getInputProps, isDragActive } = useDropzone({
     onDrop,
@@ -47,77 +75,58 @@ const ResumeUploader: React.FC<ResumeUploaderProps> = ({ onResumeData }) => {
     maxFiles: 1
   });
 
-  const handleManualInput = (e: React.ChangeEvent<HTMLTextAreaElement>) => {
-    const text = e.target.value;
-    setResumeText(text);
-    onResumeData(text);
-    if (text.trim()) {
-      setIsUploaded(true);
-    } else {
-      setIsUploaded(false);
-    }
+  const handleTextChange = (e: React.ChangeEvent<HTMLTextAreaElement>) => {
+    setResumeText(e.target.value);
+    onResumeData(e.target.value);
   };
 
-  const readFileAsText = (file: File): Promise<string> => {
-    return new Promise((resolve, reject) => {
-      const reader = new FileReader();
-      reader.onload = () => {
-        resolve(reader.result as string);
-      };
-      reader.onerror = () => {
-        reject(new Error('Failed to read file'));
-      };
-      reader.readAsText(file);
-    });
+  const clearFile = () => {
+    setFile(null);
   };
 
   return (
     <div className="space-y-4">
-      <div 
-        {...getRootProps()} 
-        className={`p-4 border-2 border-dashed rounded-md text-center cursor-pointer transition-colors
-          ${isDragActive ? 'border-primary bg-primary/10' : 'border-muted-foreground/20 hover:border-primary/50'}`}
+      <div
+        {...getRootProps()}
+        className={`border-2 border-dashed rounded-md p-6 text-center cursor-pointer transition-colors
+          ${isDragActive ? 'border-primary bg-primary/10' : 'border-muted-foreground/30 hover:border-primary/50'}`}
       >
         <input {...getInputProps()} />
-        <div className="flex flex-col items-center justify-center gap-2">
+        <div className="flex flex-col items-center justify-center space-y-2">
           <Upload className="h-8 w-8 text-muted-foreground" />
-          {isLoading ? (
-            <div className="flex items-center gap-2">
-              <Loader2 className="h-4 w-4 animate-spin" />
-              <p>Processing...</p>
-            </div>
-          ) : isDragActive ? (
-            <p>Drop your resume file here...</p>
-          ) : (
-            <div>
-              <p className="text-sm text-muted-foreground">
-                Drag & drop your resume file here, or click to select
-              </p>
-              <p className="text-xs text-muted-foreground mt-1">
-                Supports: TXT, PDF, DOC, DOCX
-              </p>
-            </div>
-          )}
+          <p className="text-sm font-medium">
+            {isDragActive ? 'Drop the file here' : 'Drag & drop a file or click to browse'}
+          </p>
+          <p className="text-xs text-muted-foreground">
+            Supports TXT, PDF, DOC, DOCX
+          </p>
         </div>
       </div>
-
-      <div>
-        <div className="flex items-center justify-between mb-2">
-          <h4 className="text-sm font-medium">Resume Content</h4>
-          {isUploaded && (
-            <span className="flex items-center text-xs text-green-600">
-              <Check className="w-3 h-3 mr-1" />
-              Resume ready for analysis
-            </span>
-          )}
+      
+      {file && (
+        <div className="flex items-center justify-between bg-muted p-2 rounded-md">
+          <div className="flex items-center space-x-2">
+            <File className="h-4 w-4 text-muted-foreground" />
+            <span className="text-sm truncate max-w-[200px]">{file.name}</span>
+          </div>
+          <Button variant="ghost" size="icon" onClick={clearFile}>
+            <X className="h-4 w-4" />
+          </Button>
         </div>
+      )}
+      
+      {isLoading ? (
+        <div className="flex justify-center py-4">
+          <Loader2 className="h-6 w-6 animate-spin text-primary" />
+        </div>
+      ) : (
         <Textarea
           placeholder="Or paste your resume content here..."
-          className="min-h-[150px] font-mono text-sm"
           value={resumeText}
-          onChange={handleManualInput}
+          onChange={handleTextChange}
+          className="min-h-[150px]"
         />
-      </div>
+      )}
     </div>
   );
 };
