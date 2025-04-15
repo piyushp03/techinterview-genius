@@ -15,7 +15,11 @@ export interface ResumeAnalysisResult {
   suggestions: string[];
   jobFit: string;
   score: number;
+  matchPercentage: number;
+  keySkills: string[];
+  missingSkills: string[];
   keywords: string[];
+  summary: string;
 }
 
 // Hardcoded API key for demonstration (in a real app, this would be stored securely)
@@ -172,9 +176,12 @@ export const analyzeResume = async (resumeText: string): Promise<ResumeAnalysisR
         "Tailor your skills section more specifically to job requirements",
         "Consider adding a brief professional summary at the beginning"
       ],
-      jobFit: "Your profile appears well-suited for mid-level developer roles.",
+      jobFit: "medium",
       score: 78,
-      keywords: ["React", "JavaScript", "TypeScript", "Node.js", "Agile"]
+      matchPercentage: 78,
+      keySkills: ["React", "JavaScript", "TypeScript", "Node.js", "Agile"],
+      missingSkills: ["AWS", "Docker", "GraphQL"],
+      keywords: ["React", "JavaScript", "TypeScript", "Node.js", "Agile", "AWS", "Docker", "GraphQL"]
     };
   } catch (error) {
     console.error("Error analyzing resume:", error);
@@ -183,9 +190,13 @@ export const analyzeResume = async (resumeText: string): Promise<ResumeAnalysisR
       strengths: [],
       weaknesses: [],
       suggestions: ["Please try uploading your resume again"],
-      jobFit: "Unable to determine job fit due to processing error.",
+      jobFit: "medium",
       score: 0,
-      keywords: []
+      matchPercentage: 0,
+      keySkills: [],
+      missingSkills: ["Unable to determine missing skills"],
+      keywords: [],
+      summary: "Error analyzing resume"
     };
   }
 };
