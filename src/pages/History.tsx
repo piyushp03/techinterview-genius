@@ -13,6 +13,7 @@ import { format } from 'date-fns';
 import { Progress } from '@/components/ui/progress';
 import { AlertDialog, AlertDialogAction, AlertDialogCancel, AlertDialogContent, AlertDialogDescription, AlertDialogFooter, AlertDialogHeader, AlertDialogTitle, AlertDialogTrigger } from '@/components/ui/alert-dialog';
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogDescription } from '@/components/ui/dialog';
+import InterviewResultsDialog from '@/components/InterviewResultsDialog';
 
 const History = () => {
   const { user } = useAuth();
@@ -21,6 +22,8 @@ const History = () => {
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
   const [isErrorDialogOpen, setIsErrorDialogOpen] = useState(false);
+  const [selectedSessionId, setSelectedSessionId] = useState<string | null>(null);
+  const [isResultsDialogOpen, setIsResultsDialogOpen] = useState(false);
 
   useEffect(() => {
     fetchSessions();
@@ -134,7 +137,10 @@ const History = () => {
         status: 'Completed',
         icon: <CheckCircle className="h-4 w-4 text-green-500" />,
         buttonText: 'View Results',
-        action: () => navigate(`/interview/results/${session.id}`),
+        action: () => {
+          setSelectedSessionId(session.id);
+          setIsResultsDialogOpen(true);
+        },
       };
     } else if (session.start_time) {
       return {
@@ -166,7 +172,7 @@ const History = () => {
       <main className="flex-1 container py-8 px-4 md:px-6">
         <div className="flex justify-between items-center mb-6">
           <h1 className="text-3xl font-bold">Interview History</h1>
-          <Button onClick={() => navigate('/interview/new')}>Start New Interview</Button>
+          <Button onClick={() => navigate('/new-interview')}>Start New Interview</Button>
         </div>
         
         {loading ? (
@@ -180,7 +186,7 @@ const History = () => {
             <p className="text-muted-foreground mb-6">
               Start a new interview to begin tracking your practice sessions
             </p>
-            <Button onClick={() => navigate('/interview/new')}>
+            <Button onClick={() => navigate('/new-interview')}>
               Start New Interview
             </Button>
           </div>
@@ -291,6 +297,12 @@ const History = () => {
           </div>
         </DialogContent>
       </Dialog>
+
+      <InterviewResultsDialog 
+        open={isResultsDialogOpen} 
+        onOpenChange={setIsResultsDialogOpen} 
+        sessionId={selectedSessionId || undefined}
+      />
     </div>
   );
 };
