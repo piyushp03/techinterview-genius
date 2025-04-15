@@ -172,7 +172,9 @@ export const InterviewProvider: React.FC<{ children: React.ReactNode }> = ({ chi
       const initialQuestion = await generateInterviewQuestion(
         selectedRole,
         selectedCategory,
-        []
+        [],
+        options.resumeText,
+        options.customTopics
       );
       
       const welcomeMessage = `Hello! I'll be your technical interviewer today. We'll focus on ${selectedCategory} questions for a ${selectedRole} role using ${selectedLanguage}.\n\n${initialQuestion}`;
@@ -313,7 +315,9 @@ export const InterviewProvider: React.FC<{ children: React.ReactNode }> = ({ chi
       const aiResponse = await generateInterviewQuestion(
         state.role,
         state.category,
-        previousQuestions
+        previousQuestions,
+        state.resumeText,
+        state.customTopics
       );
       
       // Add AI response
