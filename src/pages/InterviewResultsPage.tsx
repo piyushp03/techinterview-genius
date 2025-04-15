@@ -6,7 +6,7 @@ import { supabase } from '@/integrations/supabase/client';
 import Navbar from '@/components/Navbar';
 import InterviewResults from '@/components/InterviewResults';
 import { Button } from '@/components/ui/button';
-import { ArrowLeft } from 'lucide-react';
+import { ArrowLeft, Eye, EyeOff } from 'lucide-react';
 import { toast } from 'sonner';
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogDescription } from '@/components/ui/dialog';
 
@@ -43,6 +43,12 @@ const InterviewResultsPage = () => {
           setIsDialogOpen(true);
         } else {
           setSessionData(data);
+          
+          // Check if the interview has been completed
+          if (!data.end_time) {
+            navigate(`/interview/${id}`);
+            toast.info('This interview session is still in progress');
+          }
         }
       } catch (error: any) {
         console.error('Error fetching interview session:', error);
@@ -95,6 +101,19 @@ const InterviewResultsPage = () => {
               <p className="text-sm text-muted-foreground">Category: {sessionData?.category}, Language: {sessionData?.language}</p>
             </div>
           )}
+          <Button variant="outline" onClick={toggleResultsView}>
+            {showResults ? (
+              <>
+                <EyeOff className="h-4 w-4 mr-2" />
+                Hide Results
+              </>
+            ) : (
+              <>
+                <Eye className="h-4 w-4 mr-2" />
+                Show Results
+              </>
+            )}
+          </Button>
         </div>
         
         {id && showResults && <InterviewResults sessionId={id} />}
