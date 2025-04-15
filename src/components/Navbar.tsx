@@ -43,7 +43,7 @@ const Navbar = () => {
 
   const navItems = [
     { path: '/dashboard', label: 'Dashboard', icon: <LayoutDashboard className="h-5 w-5" /> },
-    { path: '/interview/new', label: 'New Interview', icon: <User className="h-5 w-5" /> },
+    { path: '/new-interview', label: 'New Interview', icon: <User className="h-5 w-5" /> },
     { path: '/questions', label: 'Custom Questions', icon: <MessageSquare className="h-5 w-5" /> },
     { path: '/resume', label: 'Resume Analysis', icon: <FileText className="h-5 w-5" /> },
     { path: '/history', label: 'History', icon: <History className="h-5 w-5" /> },
