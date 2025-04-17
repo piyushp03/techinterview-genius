@@ -20,7 +20,7 @@ import { Textarea } from "@/components/ui/textarea";
 import { Badge } from "@/components/ui/badge";
 import { Separator } from "@/components/ui/separator";
 import { Mic, Send, Loader2, ArrowLeft, CheckCircle, AlertTriangle } from "lucide-react";
-import SpeechRecognition, { useSpeechRecognition } from 'react-speech-recognition';
+import useSpeechRecognition from '@/hooks/useSpeechRecognition';
 
 // Define types
 type Message = {
@@ -47,13 +47,21 @@ const InterviewSession = () => {
   const [isVoiceEnabled, setIsVoiceEnabled] = useState<boolean>(false);
   const editorRef = useRef<any>(null);
 
-  // Speech recognition hooks
+  // Use our custom speech recognition hook instead of the library
   const {
     transcript,
     listening,
+    startListening,
+    stopListening,
     resetTranscript,
     browserSupportsSpeechRecognition
-  } = useSpeechRecognition();
+  } = useSpeechRecognition({
+    onResult: (transcript) => {
+      if (isVoiceEnabled) {
+        setCurrentAnswer(transcript);
+      }
+    },
+  });
 
   useEffect(() => {
     if (id) {
@@ -71,14 +79,7 @@ const InterviewSession = () => {
     }
   }, [transcript, isVoiceEnabled]);
 
-  const startListening = () => {
-    SpeechRecognition.startListening({ continuous: true });
-  };
-
-  const stopListening = () => {
-    SpeechRecognition.stopListening();
-  };
-
+  // Use the startListening and stopListening from our custom hook
   const toggleVoiceInput = () => {
     if (!isVoiceEnabled) {
       startListening();
@@ -109,7 +110,7 @@ const InterviewSession = () => {
       toast.error(error.message || 'Failed to load interview questions.');
     }
   };
-
+  
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
     
