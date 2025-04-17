@@ -9,9 +9,10 @@ import CodeEditor from '@/components/CodeEditor';
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs';
 import { Button } from '@/components/ui/button';
 import { Progress } from '@/components/ui/progress';
-import { Maximize, Minimize, ArrowLeft, Clock, CheckSquare } from 'lucide-react';
+import { Maximize, Minimize, ArrowLeft, Clock, CheckSquare, Save, Download } from 'lucide-react';
 import { toast } from 'sonner';
-import { generateInterviewQuestion } from '@/utils/openaiService';
+import { generateInterviewQuestion, analyzeInterviewResults } from '@/utils/openaiService';
+import { Dialog, DialogContent, DialogHeader, DialogFooter, DialogTitle, DialogDescription } from '@/components/ui/dialog';
 
 const InterviewSession = () => {
   const { id } = useParams<{ id: string }>();
@@ -29,6 +30,8 @@ const InterviewSession = () => {
   const [questionCount, setQuestionCount] = useState(0);
   const timerRef = useRef<number | null>(null);
   const [isCompleted, setIsCompleted] = useState(false);
+  const [showEndDialog, setShowEndDialog] = useState(false);
+  const [analyzeLoading, setAnalyzeLoading] = useState(false);
 
   useEffect(() => {
     const fetchSessionData = async () => {
@@ -77,7 +80,7 @@ const InterviewSession = () => {
         
         if (messagesError) throw messagesError;
         
-        if (messagesData.length > 0) {
+        if (messagesData && messagesData.length > 0) {
           setMessages(messagesData);
         } else {
           await generateFirstQuestion(data);
@@ -139,6 +142,7 @@ const InterviewSession = () => {
           session_id: id,
           is_bot: true,
           content: welcomeMessage,
+          created_at: new Date().toISOString()
         })
         .select();
       
@@ -167,6 +171,7 @@ const InterviewSession = () => {
           session_id: id,
           is_bot: false,
           content,
+          created_at: new Date().toISOString()
         })
         .select();
       
@@ -179,42 +184,74 @@ const InterviewSession = () => {
         .filter(msg => msg.is_bot)
         .map(msg => msg.content);
       
-      if (questionCount >= sessionData.questions_limit) {
+      if (questionCount >= (sessionData?.questions_limit || 5)) {
         const { data: finalMessage, error: finalError } = await supabase
           .from('interview_messages')
           .insert({
             session_id: id,
             is_bot: true,
-            content: "You've reached the end of this interview session. Thank you for your participation. You can go back to review your answers or end the session now.",
+            content: "You've reached the end of this interview session. Thank you for your participation. Would you like to end the interview now to see your results?",
+            created_at: new Date().toISOString()
           })
           .select();
         
         if (finalError) throw finalError;
         
         setMessages(prev => [...prev, finalMessage[0]]);
-        await endInterview();
+        setShowEndDialog(true);
         return;
       }
       
-      const aiResponse = await generateInterviewQuestion(
-        sessionData.role_type,
-        sessionData.category,
-        previousQuestions,
-        sessionData.resume_data,
-      );
-      
-      const { data: botMessage, error: botError } = await supabase
-        .from('interview_messages')
-        .insert({
-          session_id: id,
-          is_bot: true,
-          content: aiResponse,
-        })
-        .select();
-      
-      if (botError) throw botError;
-      
-      setMessages(prev => [...prev, botMessage[0]]);
+      // For coding questions, check if we need to analyze code
+      if (sessionData?.is_coding_enabled && activeTab === 'code') {
+        // Generate question with coding context
+        const codingContext = `The user has provided this code solution:\n\n\`\`\`${sessionData.language}\n${codeValue}\n\`\`\`\n\nPlease analyze this code as part of your response and ask a follow-up question.`;
+        
+        const aiResponse = await generateInterviewQuestion(
+          sessionData.role_type,
+          sessionData.category,
+          previousQuestions,
+          sessionData.resume_data,
+          [codingContext]
+        );
+        
+        const { data: botMessage, error: botError } = await supabase
+          .from('interview_messages')
+          .insert({
+            session_id: id,
+            is_bot: true,
+            content: aiResponse,
+            created_at: new Date().toISOString(),
+            code_snippet: codeValue
+          })
+          .select();
+        
+        if (botError) throw botError;
+        
+        setMessages(prev => [...prev, botMessage[0]]);
+      } else {
+        // Standard question generation
+        const aiResponse = await generateInterviewQuestion(
+          sessionData.role_type,
+          sessionData.category,
+          previousQuestions,
+          sessionData.resume_data,
+        );
+        
+        const { data: botMessage, error: botError } = await supabase
+          .from('interview_messages')
+          .insert({
+            session_id: id,
+            is_bot: true,
+            content: aiResponse,
+            created_at: new Date().toISOString()
+          })
+          .select();
+        
+        if (botError) throw botError;
+        
+        setMessages(prev => [...prev, botMessage[0]]);
+      }
       
       await updateQuestionCount(questionCount + 1);
       setQuestionCount(prev => prev + 1);
@@ -239,9 +276,15 @@ const InterviewSession = () => {
 
   const endInterview = async () => {
     try {
+      setAnalyzeLoading(true);
+      
+      // Update session status
       await supabase
         .from('interview_sessions')
-        .update({ end_time: new Date().toISOString() })
+        .update({ 
+          end_time: new Date().toISOString(),
+          updated_at: new Date().toISOString()
+        })
         .eq('id', id);
       
       setIsCompleted(true);
@@ -250,10 +293,39 @@ const InterviewSession = () => {
         window.clearInterval(timerRef.current);
       }
       
-      toast.success('Interview session completed');
+      // Generate the interview results analysis
+      try {
+        const results = await analyzeInterviewResults(sessionData, messages);
+        
+        // Save results to database
+        await supabase
+          .from('interview_results')
+          .insert({
+            session_id: id,
+            user_id: user?.id,
+            score: results.overallScore,
+            feedback: results.feedback,
+            strengths: results.strengths,
+            weaknesses: results.weaknesses,
+            improvement_areas: results.improvementAreas,
+            recommended_resources: results.recommendedResources,
+            created_at: new Date().toISOString()
+          });
+        
+        toast.success('Interview completed! View your results.');
+      } catch (analysisError) {
+        console.error('Error analyzing interview results:', analysisError);
+      }
+      
+      // Redirect to results page after a short delay
+      setTimeout(() => {
+        navigate(`/interview/results/${id}`);
+      }, 1500);
     } catch (error: any) {
       console.error('Error ending interview:', error);
       toast.error('Failed to end interview session');
+    } finally {
+      setAnalyzeLoading(false);
     }
   };
 
@@ -281,6 +353,38 @@ const InterviewSession = () => {
 
   const handleCodeChange = (newCode: string) => {
     setCodeValue(newCode);
+  };
+
+  const saveCode = () => {
+    // Save code to localStorage as backup
+    localStorage.setItem(`code-${id}`, codeValue);
+    
+    // Save to database if possible
+    try {
+      supabase
+        .from('interview_code_snippets')
+        .insert({
+          session_id: id,
+          user_id: user?.id,
+          code: codeValue,
+          language: sessionData?.language || 'javascript',
+          created_at: new Date().toISOString()
+        })
+        .then(() => toast.success('Code saved successfully'))
+        .catch(err => console.error('Error saving code:', err));
+    } catch (error) {
+      console.error('Failed to save code:', error);
+    }
+  };
+
+  const downloadCode = () => {
+    const element = document.createElement('a');
+    const file = new Blob([codeValue], {type: 'text/plain'});
+    element.href = URL.createObjectURL(file);
+    element.download = `interview-code-${new Date().toISOString().slice(0,10)}.${sessionData?.language || 'js'}`;
+    document.body.appendChild(element);
+    element.click();
+    document.body.removeChild(element);
   };
 
   if (loading) {
@@ -336,11 +440,11 @@ const InterviewSession = () => {
               </div>
               <div>
                 {isCompleted ? (
-                  <Button variant="outline" onClick={() => navigate('/history')}>
+                  <Button variant="outline" onClick={() => navigate(`/interview/results/${id}`)}>
                     View Interview Results
                   </Button>
                 ) : (
-                  <Button variant="outline" onClick={endInterview}>
+                  <Button variant="outline" onClick={() => setShowEndDialog(true)}>
                     End Interview
                   </Button>
                 )}
@@ -363,15 +467,28 @@ const InterviewSession = () => {
                     input={input}
                     setInput={setInput}
                     isCompleted={isCompleted}
+                    sessionId={id}
                   />
                 </TabsContent>
-                <TabsContent value="code" className="flex-1 flex">
-                  <CodeEditor
-                    language={sessionData?.language || 'javascript'}
-                    initialCode={codeValue}
-                    onChange={handleCodeChange}
-                    readOnly={isCompleted}
-                  />
+                <TabsContent value="code" className="flex-1 flex flex-col">
+                  <div className="flex justify-end mb-2 gap-2 px-4">
+                    <Button variant="outline" size="sm" onClick={saveCode}>
+                      <Save className="h-4 w-4 mr-2" />
+                      Save Code
+                    </Button>
+                    <Button variant="outline" size="sm" onClick={downloadCode}>
+                      <Download className="h-4 w-4 mr-2" />
+                      Download
+                    </Button>
+                  </div>
+                  <div className="flex-1">
+                    <CodeEditor
+                      language={sessionData?.language?.toLowerCase() || 'javascript'}
+                      initialCode={codeValue}
+                      onChange={handleCodeChange}
+                      readOnly={isCompleted}
+                    />
+                  </div>
                 </TabsContent>
               </Tabs>
             ) : (
@@ -384,11 +501,38 @@ const InterviewSession = () => {
                 input={input}
                 setInput={setInput}
                 isCompleted={isCompleted}
+                sessionId={id}
               />
             )}
           </div>
         </div>
       </main>
+
+      <Dialog open={showEndDialog} onOpenChange={setShowEndDialog}>
+        <DialogContent>
+          <DialogHeader>
+            <DialogTitle>End Interview Session?</DialogTitle>
+            <DialogDescription>
+              Are you sure you want to end this interview? Your results will be analyzed and you'll be redirected to the results page.
+            </DialogDescription>
+          </DialogHeader>
+          <DialogFooter>
+            <Button variant="outline" onClick={() => setShowEndDialog(false)} disabled={analyzeLoading}>
+              Continue Interview
+            </Button>
+            <Button onClick={endInterview} disabled={analyzeLoading}>
+              {analyzeLoading ? (
+                <>
+                  <span className="mr-2">Analyzing...</span>
+                  <div className="h-4 w-4 animate-spin rounded-full border-2 border-current border-t-transparent" />
+                </>
+              ) : (
+                'End Interview'
+              )}
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
     </div>
   );
 };

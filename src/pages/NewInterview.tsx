@@ -123,6 +123,7 @@ const NewInterview = () => {
           questions_limit: questionsLimit,
           is_coding_enabled: isCodingEnabled,
           start_time: new Date().toISOString(),
+          created_at: new Date().toISOString(),
         })
         .select()
         .single();
@@ -134,7 +135,7 @@ const NewInterview = () => {
       toast.success('Interview session created');
       console.log('Created interview session with ID:', data.id);
       
-      // Ensure we navigate to the interview page with the correct ID
+      // Navigate to the interview session
       if (data && data.id) {
         navigate(`/interview/${data.id}`);
       } else {

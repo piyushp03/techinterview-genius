@@ -1,6 +1,7 @@
 
-import React from 'react';
+import React, { useEffect } from 'react';
 import { Routes, Route, useLocation } from 'react-router-dom';
+import { setupDatabase } from './utils/databaseSetup';
 
 // Pages
 import Index from './pages/Index';
@@ -23,6 +24,11 @@ import ProtectedRoute from './components/ProtectedRoute';
 
 function App() {
   const location = useLocation();
+  
+  useEffect(() => {
+    // Set up database tables if needed
+    setupDatabase().catch(console.error);
+  }, []);
   
   return (
     <div className="min-h-screen bg-background">
