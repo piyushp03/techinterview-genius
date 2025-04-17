@@ -1,7 +1,8 @@
+
 import React, { useState, useEffect, useRef } from 'react';
 import { useParams, useNavigate } from 'react-router-dom';
 import { toast } from 'sonner';
-import { Editor } from '@monaco-editor/react';
+import Editor from '@monaco-editor/react';
 import { useAuth } from '@/context/AuthContext';
 import { useInterview } from '@/context/InterviewContext';
 import { analyzeAnswer } from '@/utils/interviewAnalysisService';
@@ -9,18 +10,17 @@ import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card';
-import { ModeToggle } from '@/components/ModeToggle';
 import {
   Select,
   SelectContent,
   SelectItem,
   SelectTrigger,
   SelectValue,
-} from "@/components/ui/select"
-import { Textarea } from "@/components/ui/textarea"
-import { Badge } from "@/components/ui/badge"
-import { Separator } from "@/components/ui/separator"
-import { Mic, Send, Loader2, ArrowLeft, CheckCircle, AlertTriangle } from "lucide-react"
+} from "@/components/ui/select";
+import { Textarea } from "@/components/ui/textarea";
+import { Badge } from "@/components/ui/badge";
+import { Separator } from "@/components/ui/separator";
+import { Mic, Send, Loader2, ArrowLeft, CheckCircle, AlertTriangle } from "lucide-react";
 import SpeechRecognition, { useSpeechRecognition } from 'react-speech-recognition';
 
 // Define types
@@ -33,7 +33,7 @@ const InterviewSession = () => {
   const { id } = useParams<{ id: string }>();
   const navigate = useNavigate();
   const { user } = useAuth();
-  const { interviewSettings } = useInterview();
+  const { currentInterview } = useInterview();
   const [questions, setQuestions] = useState<string[]>([]);
   const [answers, setAnswers] = useState<string[]>([]);
   const [scores, setScores] = useState<number[]>([]);
@@ -138,8 +138,8 @@ const InterviewSession = () => {
       const analysis = await analyzeAnswer(
         currentQuestion,
         fullAnswer,
-        interviewSettings?.role || "Software Developer",
-        interviewSettings?.language || "JavaScript"
+        currentInterview?.role_type || "Software Developer",
+        currentInterview?.language || "JavaScript"
       );
       
       // Process analysis result
@@ -155,7 +155,7 @@ const InterviewSession = () => {
       // Clear inputs
       setCurrentAnswer("");
       setCodeSolution("");
-      setTranscript("");
+      resetTranscript(); // Use resetTranscript instead of setTranscript
       
       // Move to next question if available
       if (questionIndex < questions.length - 1) {
