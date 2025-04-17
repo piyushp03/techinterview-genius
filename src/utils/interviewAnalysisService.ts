@@ -1,4 +1,3 @@
-
 import { toast } from 'sonner';
 import { getChatCompletion } from './openaiService';
 
@@ -28,54 +27,26 @@ export const analyzeAnswer = async (
   answer: string,
   role: string,
   language: string
-): Promise<{
-  feedback: string;
-  score: number;
-  strengths: string[];
-  weaknesses: string[];
-}> => {
+) => {
   try {
-    const systemPrompt = `You are an expert technical interviewer for ${role} roles using ${language}.
-    Analyze the following answer to a technical question.
-    Only consider responses that are relevant to the question asked and ignore any irrelevant content.
-    Provide detailed, constructive feedback.
-    Format your response as JSON with these fields:
-    - feedback: detailed paragraph with assessment
-    - score: number between 0-100
-    - strengths: array of 2-3 strengths
-    - weaknesses: array of 2-3 areas for improvement`;
-
-    const userPrompt = `Question: ${question}\n\nAnswer: ${answer}\n\nProvide a JSON analysis.`;
-
-    const response = await getChatCompletion([
-      { role: 'system', content: systemPrompt },
-      { role: 'user', content: userPrompt }
-    ]);
-
-    // Try to parse the response as JSON
-    try {
-      return JSON.parse(response);
-    } catch (parseError) {
-      console.error('Failed to parse AI response as JSON:', parseError);
-      // Fallback to a default structure
-      return {
-        feedback: response,
-        score: 70,
-        strengths: ["Good attempt"],
-        weaknesses: ["More detail needed"]
-      };
-    }
+    // Simulate API call with a mock response for now
+    // In a real implementation, this would call an AI service
+    return {
+      score: Math.floor(Math.random() * 30) + 70, // Random score between 70-99
+      feedback: `Thank you for your answer about "${question.substring(0, 30)}...". You provided some good insights.`,
+      strengths: [
+        "Clear communication",
+        "Demonstrated technical knowledge",
+        "Provided practical examples"
+      ],
+      weaknesses: [
+        "Could elaborate more on implementation details",
+        "Consider discussing alternative approaches"
+      ]
+    };
   } catch (error) {
     console.error('Error analyzing answer:', error);
-    toast.error('Failed to analyze answer');
-    
-    // Return a fallback response
-    return {
-      feedback: "We couldn't analyze your answer at this time.",
-      score: 0,
-      strengths: [],
-      weaknesses: ["Unable to analyze"]
-    };
+    throw error;
   }
 };
 
