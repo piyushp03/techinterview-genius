@@ -1,528 +1,341 @@
 import React, { useState, useEffect, useRef } from 'react';
 import { useParams, useNavigate } from 'react-router-dom';
-import { useAuth } from '@/context/AuthContext';
-import { supabase } from '@/integrations/supabase/client';
-import Navbar from '@/components/Navbar';
-import InterviewPanel from '@/components/InterviewPanel';
-import CodeEditor from '@/components/CodeEditor';
-import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs';
-import { Button } from '@/components/ui/button';
-import { Progress } from '@/components/ui/progress';
-import { Maximize, Minimize, ArrowLeft, Clock, CheckSquare, Save, Download } from 'lucide-react';
 import { toast } from 'sonner';
-import { generateInterviewQuestion, analyzeInterviewResults } from '@/utils/openaiService';
-import { Dialog, DialogContent, DialogHeader, DialogFooter, DialogTitle, DialogDescription } from '@/components/ui/dialog';
+import { Editor } from '@monaco-editor/react';
+import { useAuth } from '@/context/AuthContext';
+import { useInterview } from '@/context/InterviewContext';
+import { analyzeAnswer } from '@/utils/interviewAnalysisService';
+import { Button } from '@/components/ui/button';
+import { Input } from '@/components/ui/input';
+import { Label } from '@/components/ui/label';
+import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card';
+import { ModeToggle } from '@/components/ModeToggle';
+import {
+  Select,
+  SelectContent,
+  SelectItem,
+  SelectTrigger,
+  SelectValue,
+} from "@/components/ui/select"
+import { Textarea } from "@/components/ui/textarea"
+import { Badge } from "@/components/ui/badge"
+import { Separator } from "@/components/ui/separator"
+import { Mic, Send, Loader2, ArrowLeft, CheckCircle, AlertTriangle } from "lucide-react"
+import SpeechRecognition, { useSpeechRecognition } from 'react-speech-recognition';
+
+// Define types
+type Message = {
+  role: 'user' | 'assistant';
+  content: string;
+};
 
 const InterviewSession = () => {
   const { id } = useParams<{ id: string }>();
   const navigate = useNavigate();
   const { user } = useAuth();
-  const [loading, setLoading] = useState(true);
-  const [messages, setMessages] = useState<any[]>([]);
-  const [sessionData, setSessionData] = useState<any>(null);
-  const [input, setInput] = useState('');
-  const [codeValue, setCodeValue] = useState('// Write your code here');
-  const [isFullScreen, setIsFullScreen] = useState(false);
-  const [isProcessing, setIsProcessing] = useState(false);
-  const [activeTab, setActiveTab] = useState('chat');
-  const [timeRemaining, setTimeRemaining] = useState(0);
-  const [questionCount, setQuestionCount] = useState(0);
-  const timerRef = useRef<number | null>(null);
-  const [isCompleted, setIsCompleted] = useState(false);
-  const [showEndDialog, setShowEndDialog] = useState(false);
-  const [analyzeLoading, setAnalyzeLoading] = useState(false);
+  const { interviewSettings } = useInterview();
+  const [questions, setQuestions] = useState<string[]>([]);
+  const [answers, setAnswers] = useState<string[]>([]);
+  const [scores, setScores] = useState<number[]>([]);
+  const [messages, setMessages] = useState<Message[]>([]);
+  const [currentQuestion, setCurrentQuestion] = useState<string>('');
+  const [currentAnswer, setCurrentAnswer] = useState<string>('');
+  const [questionIndex, setQuestionIndex] = useState<number>(0);
+  const [isSubmitting, setIsSubmitting] = useState<boolean>(false);
+  const [isCompleted, setIsCompleted] = useState<boolean>(false);
+  const [codeSolution, setCodeSolution] = useState<string>('');
+  const [selectedLanguage, setSelectedLanguage] = useState<string>('javascript');
+  const [isVoiceEnabled, setIsVoiceEnabled] = useState<boolean>(false);
+  const editorRef = useRef<any>(null);
+
+  // Speech recognition hooks
+  const {
+    transcript,
+    listening,
+    resetTranscript,
+    browserSupportsSpeechRecognition
+  } = useSpeechRecognition();
 
   useEffect(() => {
-    const fetchSessionData = async () => {
-      if (!id) return;
-      
-      try {
-        const { data, error } = await supabase
-          .from('interview_sessions')
-          .select('*')
-          .eq('id', id)
-          .eq('user_id', user?.id)
-          .single();
-        
-        if (error) throw error;
-        
-        if (!data) {
-          toast.error('Interview session not found');
-          navigate('/dashboard');
-          return;
-        }
-        
-        setSessionData(data);
-        
-        if (data.start_time) {
-          const startTime = new Date(data.start_time).getTime();
-          const duration = data.time_limit * 60 * 1000;
-          const now = Date.now();
-          const endTime = startTime + duration;
-          const remaining = Math.max(0, Math.floor((endTime - now) / 1000));
-          setTimeRemaining(remaining);
-        } else {
-          setTimeRemaining(data.time_limit * 60);
-        }
-        
-        setQuestionCount(data.current_question_count || 0);
-        
-        if (data.end_time) {
-          setIsCompleted(true);
-        }
-        
-        const { data: messagesData, error: messagesError } = await supabase
-          .from('interview_messages')
-          .select('*')
-          .eq('session_id', id)
-          .order('created_at', { ascending: true });
-        
-        if (messagesError) throw messagesError;
-        
-        if (messagesData && messagesData.length > 0) {
-          setMessages(messagesData);
-        } else {
-          await generateFirstQuestion(data);
-        }
-      } catch (error: any) {
-        console.error('Error fetching interview session:', error);
-        toast.error(error.message || 'Failed to load interview session');
-        navigate('/dashboard');
-      } finally {
-        setLoading(false);
-      }
-    };
-    
-    fetchSessionData();
-    
-    return () => {
-      if (timerRef.current) {
-        window.clearInterval(timerRef.current);
-      }
-    };
-  }, [id, user, navigate]);
-  
+    if (id) {
+      loadInterview(id);
+    }
+    if (!browserSupportsSpeechRecognition) {
+      console.log("Browser doesn't support speech recognition.");
+    }
+  }, [id, browserSupportsSpeechRecognition]);
+
   useEffect(() => {
-    if (timeRemaining > 0 && !isCompleted) {
-      timerRef.current = window.setInterval(() => {
-        setTimeRemaining(prev => {
-          if (prev <= 1) {
-            endInterview();
-            clearInterval(timerRef.current!);
-            return 0;
-          }
-          return prev - 1;
-        });
-      }, 1000);
+    // Update currentAnswer with the transcript when voice is enabled
+    if (isVoiceEnabled) {
+      setCurrentAnswer(transcript);
+    }
+  }, [transcript, isVoiceEnabled]);
+
+  const startListening = () => {
+    SpeechRecognition.startListening({ continuous: true });
+  };
+
+  const stopListening = () => {
+    SpeechRecognition.stopListening();
+  };
+
+  const toggleVoiceInput = () => {
+    if (!isVoiceEnabled) {
+      startListening();
+    } else {
+      stopListening();
+      resetTranscript();
+    }
+    setIsVoiceEnabled(!isVoiceEnabled);
+  };
+
+  const loadInterview = async (interviewId: string) => {
+    try {
+      const response = await fetch(`/api/getInterviewQuestions?interviewId=${interviewId}`);
+      if (!response.ok) {
+        throw new Error(`Failed to fetch questions: ${response.status}`);
+      }
+      const data = await response.json();
+      if (data && data.questions && Array.isArray(data.questions)) {
+        setQuestions(data.questions);
+        setCurrentQuestion(data.questions[0]);
+        setMessages([{ role: "assistant", content: `First question: ${data.questions[0]}` }]);
+      } else {
+        console.error('Invalid data format for questions:', data);
+        toast.error('Failed to load interview questions.');
+      }
+    } catch (error: any) {
+      console.error('Error loading interview:', error);
+      toast.error(error.message || 'Failed to load interview questions.');
+    }
+  };
+
+  const handleSubmit = async (e: React.FormEvent) => {
+    e.preventDefault();
+    
+    if (!currentAnswer.trim() && !codeSolution.trim()) {
+      toast.error("Please provide an answer or code solution before submitting");
+      return;
     }
     
-    return () => {
-      if (timerRef.current) {
-        window.clearInterval(timerRef.current);
-      }
-    };
-  }, [timeRemaining, isCompleted]);
-
-  const generateFirstQuestion = async (sessionData: any) => {
-    setIsProcessing(true);
+    setIsSubmitting(true);
+    
     try {
-      const initialQuestion = await generateInterviewQuestion(
-        sessionData.role_type,
-        sessionData.category,
-        [],
-        sessionData.resume_data,
+      // Get any voice input and combine with typed answer
+      let fullAnswer = currentAnswer;
+      
+      // If there's code, format it as part of the answer
+      if (codeSolution.trim()) {
+        fullAnswer += `\n\nCode Solution:\n\`\`\`${selectedLanguage}\n${codeSolution}\n\`\`\``;
+      }
+      
+      // Add the user's answer to the messages
+      setAnswers([...answers, fullAnswer]);
+      setMessages([...messages, { role: "user", content: fullAnswer }]);
+      
+      // Send the answer for analysis
+      const analysis = await analyzeAnswer(
+        currentQuestion,
+        fullAnswer,
+        interviewSettings?.role || "Software Developer",
+        interviewSettings?.language || "JavaScript"
       );
       
-      const welcomeMessage = `Hello! I'll be your technical interviewer today. We'll focus on ${sessionData.category} questions for a ${sessionData.role_type} role using ${sessionData.language}.\n\n${initialQuestion}`;
+      // Process analysis result
+      const score = typeof analysis.score === 'number' ? analysis.score : 70;
+      const feedbackMessage = `${analysis.feedback}\n\nStrengths:\n${analysis.strengths.map(s => `- ${s}`).join('\n')}\n\nAreas to improve:\n${analysis.weaknesses.map(w => `- ${w}`).join('\n')}`;
       
-      const { data, error } = await supabase
-        .from('interview_messages')
-        .insert({
-          session_id: id,
-          is_bot: true,
-          content: welcomeMessage,
-          created_at: new Date().toISOString()
-        })
-        .select();
+      // Update scores array with new score
+      setScores([...scores, score]);
       
-      if (error) throw error;
+      // Display feedback
+      setMessages(prev => [...prev, { role: "assistant", content: feedbackMessage }]);
       
-      setMessages([data[0]]);
+      // Clear inputs
+      setCurrentAnswer("");
+      setCodeSolution("");
+      setTranscript("");
       
-      await updateQuestionCount(1);
-      setQuestionCount(1);
-    } catch (error: any) {
-      console.error('Error generating first question:', error);
-      toast.error('Failed to generate interview question');
-    } finally {
-      setIsProcessing(false);
-    }
-  };
-
-  const sendMessage = async (content: string) => {
-    if (!content.trim() || isProcessing) return;
-    
-    setIsProcessing(true);
-    try {
-      const { data: userMessage, error: userError } = await supabase
-        .from('interview_messages')
-        .insert({
-          session_id: id,
-          is_bot: false,
-          content,
-          created_at: new Date().toISOString()
-        })
-        .select();
-      
-      if (userError) throw userError;
-      
-      setMessages(prev => [...prev, userMessage[0]]);
-      setInput('');
-      
-      const previousQuestions = messages
-        .filter(msg => msg.is_bot)
-        .map(msg => msg.content);
-      
-      if (questionCount >= (sessionData?.questions_limit || 5)) {
-        const { data: finalMessage, error: finalError } = await supabase
-          .from('interview_messages')
-          .insert({
-            session_id: id,
-            is_bot: true,
-            content: "You've reached the end of this interview session. Thank you for your participation. Would you like to end the interview now to see your results?",
-            created_at: new Date().toISOString()
-          })
-          .select();
+      // Move to next question if available
+      if (questionIndex < questions.length - 1) {
+        // Get the next question ready
+        const nextIndex = questionIndex + 1;
+        setQuestionIndex(nextIndex);
+        setCurrentQuestion(questions[nextIndex]);
         
-        if (finalError) throw finalError;
-        
-        setMessages(prev => [...prev, finalMessage[0]]);
-        setShowEndDialog(true);
-        return;
-      }
-      
-      if (sessionData?.is_coding_enabled && activeTab === 'code') {
-        const codingContext = `The user has provided this code solution:\n\n\`\`\`${sessionData.language}\n${codeValue}\n\`\`\`\n\nPlease analyze this code as part of your response and ask a follow-up question.`;
-        
-        const aiResponse = await generateInterviewQuestion(
-          sessionData.role_type,
-          sessionData.category,
-          previousQuestions,
-          sessionData.resume_data,
-          [codingContext]
-        );
-        
-        const { data: botMessage, error: botError } = await supabase
-          .from('interview_messages')
-          .insert({
-            session_id: id,
-            is_bot: true,
-            content: aiResponse,
-            created_at: new Date().toISOString(),
-            code_snippet: codeValue
-          })
-          .select();
-        
-        if (botError) throw botError;
-        
-        setMessages(prev => [...prev, botMessage[0]]);
+        // Add the next question to the messages
+        setMessages(prev => [...prev, { 
+          role: "assistant", 
+          content: `Next question: ${questions[nextIndex]}` 
+        }]);
       } else {
-        const aiResponse = await generateInterviewQuestion(
-          sessionData.role_type,
-          sessionData.category,
-          previousQuestions,
-          sessionData.resume_data,
-        );
+        // This was the last question
+        setIsCompleted(true);
         
-        const { data: botMessage, error: botError } = await supabase
-          .from('interview_messages')
-          .insert({
-            session_id: id,
-            is_bot: true,
-            content: aiResponse,
-            created_at: new Date().toISOString()
-          })
-          .select();
-        
-        if (botError) throw botError;
-        
-        setMessages(prev => [...prev, botMessage[0]]);
+        // Add completion message
+        setMessages(prev => [...prev, { 
+          role: "assistant", 
+          content: "You have completed all questions! Click 'End Interview' to see your results." 
+        }]);
       }
-      
-      await updateQuestionCount(questionCount + 1);
-      setQuestionCount(prev => prev + 1);
-    } catch (error: any) {
-      console.error('Error processing message:', error);
-      toast.error('Failed to get AI response');
-    } finally {
-      setIsProcessing(false);
-    }
-  };
-
-  const updateQuestionCount = async (count: number) => {
-    try {
-      await supabase
-        .from('interview_sessions')
-        .update({ current_question_count: count })
-        .eq('id', id);
     } catch (error) {
-      console.error('Error updating question count:', error);
-    }
-  };
-
-  const endInterview = async () => {
-    try {
-      setAnalyzeLoading(true);
-      
-      await supabase
-        .from('interview_sessions')
-        .update({ 
-          end_time: new Date().toISOString(),
-          updated_at: new Date().toISOString()
-        })
-        .eq('id', id);
-      
-      setIsCompleted(true);
-      
-      if (timerRef.current) {
-        window.clearInterval(timerRef.current);
-      }
-      
-      try {
-        const results = await analyzeInterviewResults(sessionData, messages);
-        
-        await supabase
-          .from('interview_results')
-          .insert({
-            session_id: id,
-            user_id: user?.id,
-            score: results.overallScore,
-            feedback: results.feedback,
-            strengths: results.strengths,
-            weaknesses: results.weaknesses,
-            improvement_areas: results.improvementAreas,
-            recommended_resources: results.recommendedResources,
-            created_at: new Date().toISOString()
-          });
-        
-        toast.success('Interview completed! View your results.');
-      } catch (analysisError) {
-        console.error('Error analyzing interview results:', analysisError);
-      }
-      
-      setTimeout(() => {
-        navigate(`/interview/results/${id}`);
-      }, 1500);
-    } catch (error: any) {
-      console.error('Error ending interview:', error);
-      toast.error('Failed to end interview session');
+      console.error('Error processing answer:', error);
+      toast.error("Failed to process your answer. Please try again.");
     } finally {
-      setAnalyzeLoading(false);
+      setIsSubmitting(false);
     }
   };
 
-  const toggleFullScreen = () => {
-    setIsFullScreen(prev => !prev);
-  };
-
-  const formatTime = (seconds: number) => {
-    const minutes = Math.floor(seconds / 60);
-    const remainingSeconds = seconds % 60;
-    return `${minutes}:${remainingSeconds.toString().padStart(2, '0')}`;
-  };
-
-  const progressPercentage = () => {
-    if (!sessionData) return 0;
-    const maxQuestions = sessionData.questions_limit;
-    return Math.min(100, (questionCount / maxQuestions) * 100);
-  };
-
-  const timeProgressPercentage = () => {
-    if (!sessionData) return 0;
-    const totalSeconds = sessionData.time_limit * 60;
-    return Math.max(0, 100 - (timeRemaining / totalSeconds) * 100);
-  };
-
-  const handleCodeChange = (newCode: string) => {
-    setCodeValue(newCode);
-  };
-
-  const saveCode = () => {
-    localStorage.setItem(`code-${id}`, codeValue);
-    
-    try {
-      supabase
-        .from('interview_code_snippets')
-        .insert({
-          session_id: id,
-          user_id: user?.id,
-          code: codeValue,
-          language: sessionData?.language || 'javascript',
-          created_at: new Date().toISOString()
-        })
-        .then(() => toast.success('Code saved successfully'))
-        .catch((err) => console.error('Error saving code:', err));
-    } catch (error) {
-      console.error('Failed to save code:', error);
+  const handleEndInterview = () => {
+    if (id) {
+      navigate(`/interview/results/${id}`);
+    } else {
+      toast.error("Interview ID is missing.");
     }
   };
 
-  const downloadCode = () => {
-    const element = document.createElement('a');
-    const file = new Blob([codeValue], {type: 'text/plain'});
-    element.href = URL.createObjectURL(file);
-    element.download = `interview-code-${new Date().toISOString().slice(0,10)}.${sessionData?.language || 'js'}`;
-    document.body.appendChild(element);
-    element.click();
-    document.body.removeChild(element);
+  const getEditorValue = () => {
+    if (editorRef.current) {
+      setCodeSolution(editorRef.current.getValue());
+    }
   };
-
-  if (loading) {
-    return (
-      <div className="flex h-screen w-full items-center justify-center">
-        <div className="h-10 w-10 animate-spin rounded-full border-4 border-primary border-t-transparent"></div>
-      </div>
-    );
-  }
 
   return (
-    <div className={`min-h-screen bg-background flex flex-col ${isFullScreen ? 'h-screen overflow-hidden' : ''}`}>
-      {!isFullScreen && <Navbar />}
-      
-      <main className={`flex-1 container ${isFullScreen ? 'max-w-none container-fluid p-0 h-full' : 'py-6 px-4'}`}>
-        {!isFullScreen && (
-          <div className="flex justify-between items-center mb-6">
-            <div className="flex items-center">
-              <Button variant="ghost" onClick={() => navigate('/dashboard')} className="mr-2">
-                <ArrowLeft className="h-4 w-4 mr-2" />
-                Back to Dashboard
-              </Button>
-            </div>
-            <div>
-              <h2 className="text-xl font-semibold">{sessionData?.role_type} Interview ({sessionData?.category})</h2>
-              <p className="text-sm text-muted-foreground">Language: {sessionData?.language}</p>
-            </div>
-            <div>
-              <Button variant="outline" onClick={toggleFullScreen}>
-                <Maximize className="h-4 w-4 mr-2" />
-                Fullscreen
-              </Button>
-            </div>
-          </div>
-        )}
-        
-        <div className={`${isFullScreen ? 'h-full' : 'h-[calc(100vh-200px)]'}`}>
-          <div className="flex flex-col h-full">
-            <div className="flex justify-between items-center mb-4 px-4">
-              <div className="flex items-center">
-                <Clock className="text-amber-500 mr-2 h-5 w-5" />
-                <div>
-                  <span className="text-sm font-medium mr-2">Time: {formatTime(timeRemaining)}</span>
-                  <Progress value={timeProgressPercentage()} className="w-40 h-2" />
+    <div className="min-h-screen bg-background">
+      <div className="container mx-auto py-8 px-4">
+        <Button variant="ghost" onClick={() => navigate('/dashboard')} className="mb-4">
+          <ArrowLeft className="mr-2 h-4 w-4" /> Back to Dashboard
+        </Button>
+
+        <Card className="mb-4">
+          <CardHeader>
+            <CardTitle>Interview Session</CardTitle>
+            <CardDescription>Answer the questions to the best of your ability.</CardDescription>
+          </CardHeader>
+          <CardContent className="space-y-4">
+            {/* Chat Messages Display */}
+            <div className="space-y-2">
+              {messages.map((message, index) => (
+                <div key={index} className={`p-3 rounded-md ${message.role === 'user' ? 'bg-muted' : 'bg-secondary'}`}>
+                  <p className="text-sm font-medium">{message.role === 'user' ? 'You' : 'AI'}:</p>
+                  <p className="text-sm">{message.content}</p>
                 </div>
-              </div>
-              <div className="flex items-center">
-                <CheckSquare className="text-green-500 mr-2 h-5 w-5" />
+              ))}
+            </div>
+
+            <Separator />
+
+            {/* Question and Answer Section */}
+            {!isCompleted ? (
+              <form onSubmit={handleSubmit} className="space-y-4">
                 <div>
-                  <span className="text-sm font-medium mr-2">Questions: {questionCount}/{sessionData?.questions_limit}</span>
-                  <Progress value={progressPercentage()} className="w-40 h-2" />
+                  <Label htmlFor="question">Question {questionIndex + 1}/{questions.length}</Label>
+                  <Textarea
+                    id="question"
+                    value={currentQuestion}
+                    readOnly
+                    className="bg-muted/50 resize-none"
+                  />
                 </div>
-              </div>
-              <div>
-                {isCompleted ? (
-                  <Button variant="outline" onClick={() => navigate(`/interview/results/${id}`)}>
-                    View Interview Results
+
+                <div>
+                  <Label htmlFor="answer">Your Answer</Label>
+                  <Textarea
+                    id="answer"
+                    placeholder="Enter your answer here"
+                    value={currentAnswer}
+                    onChange={(e) => setCurrentAnswer(e.target.value)}
+                    className="resize-none"
+                  />
+                </div>
+
+                {browserSupportsSpeechRecognition ? (
+                  <Button
+                    type="button"
+                    variant="outline"
+                    onClick={toggleVoiceInput}
+                    className="w-full relative"
+                    disabled={listening}
+                  >
+                    {listening ? (
+                      <>
+                        Listening...
+                        <Loader2 className="absolute right-2 h-4 w-4 animate-spin" />
+                      </>
+                    ) : (
+                      <>
+                        {isVoiceEnabled ? "Disable Voice Input" : "Enable Voice Input"}
+                        <Mic className="absolute right-2 h-4 w-4" />
+                      </>
+                    )}
                   </Button>
                 ) : (
-                  <Button variant="outline" onClick={() => setShowEndDialog(true)}>
-                    End Interview
-                  </Button>
+                  <Badge variant="destructive">
+                    <AlertTriangle className="mr-2 h-4 w-4" />
+                    Voice input not supported
+                  </Badge>
                 )}
-              </div>
-            </div>
-            
-            {sessionData?.is_coding_enabled ? (
-              <Tabs value={activeTab} onValueChange={setActiveTab} className="flex-1 flex flex-col">
-                <TabsList className="mx-4 mb-2">
-                  <TabsTrigger value="chat">Interview Chat</TabsTrigger>
-                  <TabsTrigger value="code">Code Editor</TabsTrigger>
-                </TabsList>
-                <TabsContent value="chat" className="flex-1 flex">
-                  <InterviewPanel
-                    isFullScreen={isFullScreen}
-                    toggleFullScreen={toggleFullScreen}
-                    messages={messages}
-                    onSendMessage={sendMessage}
-                    isProcessing={isProcessing}
-                    input={input}
-                    setInput={setInput}
-                    isCompleted={isCompleted}
-                    sessionId={id}
-                  />
-                </TabsContent>
-                <TabsContent value="code" className="flex-1 flex flex-col">
-                  <div className="flex justify-end mb-2 gap-2 px-4">
-                    <Button variant="outline" size="sm" onClick={saveCode}>
-                      <Save className="h-4 w-4 mr-2" />
-                      Save Code
-                    </Button>
-                    <Button variant="outline" size="sm" onClick={downloadCode}>
-                      <Download className="h-4 w-4 mr-2" />
-                      Download
-                    </Button>
-                  </div>
-                  <div className="flex-1">
-                    <CodeEditor
-                      language={sessionData?.language?.toLowerCase() || 'javascript'}
-                      initialCode={codeValue}
-                      onChange={handleCodeChange}
-                      readOnly={isCompleted}
-                    />
-                  </div>
-                </TabsContent>
-              </Tabs>
-            ) : (
-              <InterviewPanel
-                isFullScreen={isFullScreen}
-                toggleFullScreen={toggleFullScreen}
-                messages={messages}
-                onSendMessage={sendMessage}
-                isProcessing={isProcessing}
-                input={input}
-                setInput={setInput}
-                isCompleted={isCompleted}
-                sessionId={id}
-              />
-            )}
-          </div>
-        </div>
-      </main>
 
-      <Dialog open={showEndDialog} onOpenChange={setShowEndDialog}>
-        <DialogContent>
-          <DialogHeader>
-            <DialogTitle>End Interview Session?</DialogTitle>
-            <DialogDescription>
-              Are you sure you want to end this interview? Your results will be analyzed and you'll be redirected to the results page.
-            </DialogDescription>
-          </DialogHeader>
-          <DialogFooter>
-            <Button variant="outline" onClick={() => setShowEndDialog(false)} disabled={analyzeLoading}>
-              Continue Interview
-            </Button>
-            <Button onClick={endInterview} disabled={analyzeLoading}>
-              {analyzeLoading ? (
-                <>
-                  <span className="mr-2">Analyzing...</span>
-                  <div className="h-4 w-4 animate-spin rounded-full border-2 border-current border-t-transparent" />
-                </>
-              ) : (
-                'End Interview'
-              )}
-            </Button>
-          </DialogFooter>
-        </DialogContent>
-      </Dialog>
+                <div>
+                  <Label>Code Solution (Optional)</Label>
+                  <Select onValueChange={setSelectedLanguage} defaultValue={selectedLanguage}>
+                    <SelectTrigger className="w-full">
+                      <SelectValue placeholder="Select a language" />
+                    </SelectTrigger>
+                    <SelectContent>
+                      <SelectItem value="javascript">JavaScript</SelectItem>
+                      <SelectItem value="python">Python</SelectItem>
+                      <SelectItem value="java">Java</SelectItem>
+                      <SelectItem value="cpp">C++</SelectItem>
+                      <SelectItem value="csharp">C#</SelectItem>
+                      <SelectItem value="go">Go</SelectItem>
+                      <SelectItem value="typescript">TypeScript</SelectItem>
+                      <SelectItem value="php">PHP</SelectItem>
+                      <SelectItem value="ruby">Ruby</SelectItem>
+                      <SelectItem value="kotlin">Kotlin</SelectItem>
+                      <SelectItem value="swift">Swift</SelectItem>
+                      <SelectItem value="rust">Rust</SelectItem>
+                    </SelectContent>
+                  </Select>
+                  <Editor
+                    height="200px"
+                    defaultLanguage={selectedLanguage}
+                    defaultValue=""
+                    theme="light"
+                    onMount={(editor) => {
+                      editorRef.current = editor;
+                    }}
+                    onChange={getEditorValue}
+                  />
+                </div>
+
+                <Button type="submit" className="w-full" disabled={isSubmitting}>
+                  {isSubmitting ? (
+                    <>
+                      Submitting...
+                      <Loader2 className="ml-2 h-4 w-4 animate-spin" />
+                    </>
+                  ) : (
+                    <>
+                      Submit Answer
+                      <Send className="ml-2 h-4 w-4" />
+                    </>
+                  )}
+                </Button>
+              </form>
+            ) : (
+              <div className="text-center">
+                <CheckCircle className="mx-auto mb-4 h-10 w-10 text-green-500" />
+                <p className="text-lg font-semibold">Congratulations! You have completed the interview.</p>
+                <Button onClick={handleEndInterview} className="mt-4">
+                  End Interview
+                </Button>
+              </div>
+            )}
+          </CardContent>
+        </Card>
+      </div>
     </div>
   );
 };
