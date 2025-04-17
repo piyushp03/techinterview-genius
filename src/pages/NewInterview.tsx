@@ -127,10 +127,19 @@ const NewInterview = () => {
         .select()
         .single();
 
-      if (error) throw error;
+      if (error) {
+        throw error;
+      }
 
       toast.success('Interview session created');
-      navigate(`/interview/${data.id}`);
+      console.log('Created interview session with ID:', data.id);
+      
+      // Ensure we navigate to the interview page with the correct ID
+      if (data && data.id) {
+        navigate(`/interview/${data.id}`);
+      } else {
+        throw new Error('Failed to get interview session ID');
+      }
     } catch (error: any) {
       console.error('Failed to create interview session:', error);
       toast.error(error.message || 'Failed to create interview session');
