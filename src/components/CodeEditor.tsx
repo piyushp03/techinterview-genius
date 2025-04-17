@@ -101,7 +101,7 @@ const CodeEditor: React.FC<CodeEditorProps> = ({
         }
       };
     }
-  }, [language, currentCode, editorRef.current, readOnly]);
+  }, [language, currentCode, editorRef.current, readOnly, onChange]);
 
   return (
     <Card className="w-full h-full border-0 overflow-hidden">
