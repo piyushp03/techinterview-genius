@@ -1,4 +1,3 @@
-
 import React, { useState, useEffect, useRef } from 'react';
 import { useParams, useNavigate } from 'react-router-dom';
 import { toast } from 'sonner';
@@ -155,7 +154,7 @@ const InterviewSession = () => {
       // Clear inputs
       setCurrentAnswer("");
       setCodeSolution("");
-      resetTranscript(); // Use resetTranscript instead of setTranscript
+      resetTranscript();
       
       // Move to next question if available
       if (questionIndex < questions.length - 1) {
