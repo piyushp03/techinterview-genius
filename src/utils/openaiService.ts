@@ -13,6 +13,16 @@ type ChatMessage = {
   content: string;
 };
 
+// Resume Analysis Result Type
+export interface ResumeAnalysisResult {
+  analysisText: string;
+  strengths: string[];
+  weaknesses: string[];
+  suggestions: string[];
+  jobFit: 'low' | 'medium' | 'high';
+  score: number;
+}
+
 /**
  * Get a completion from OpenAI's chat completion API
  */
@@ -208,6 +218,69 @@ export const analyzeAnswer = async (
       score: 0,
       strengths: [],
       weaknesses: ["Unable to analyze"]
+    };
+  }
+};
+
+/**
+ * Analyze a resume and provide feedback
+ */
+export const analyzeResume = async (resumeText: string): Promise<ResumeAnalysisResult> => {
+  try {
+    const systemPrompt = `You are an expert resume reviewer with extensive experience in technical hiring.
+    Analyze the following resume and provide detailed feedback.
+    Format your response as JSON with these fields:
+    - analysisText: detailed paragraph with overall assessment
+    - strengths: array of 3-5 strengths of the resume
+    - weaknesses: array of 3-5 areas for improvement
+    - suggestions: array of 3-5 specific actionable suggestions
+    - jobFit: one of "low", "medium", or "high" indicating overall fit for technical roles
+    - score: number between 0-100 indicating overall resume quality`;
+
+    const userPrompt = `Resume text:\n\n${resumeText}\n\nProvide a detailed analysis as JSON.`;
+
+    const messages: ChatMessage[] = [
+      { role: 'system', content: systemPrompt },
+      { role: 'user', content: userPrompt }
+    ];
+
+    const response = await getChatCompletion(messages, 'gpt-4o-mini');
+
+    // Try to parse the response as JSON
+    try {
+      const parsedResponse = JSON.parse(response);
+      return {
+        analysisText: parsedResponse.analysisText || "Resume analysis completed.",
+        strengths: parsedResponse.strengths || ["Good technical background"],
+        weaknesses: parsedResponse.weaknesses || ["Could improve formatting"],
+        suggestions: parsedResponse.suggestions || ["Add more quantifiable achievements"],
+        jobFit: parsedResponse.jobFit || "medium",
+        score: parsedResponse.score || 70
+      };
+    } catch (parseError) {
+      console.error('Failed to parse AI response as JSON:', parseError);
+      // Fallback to a default structure with the text response
+      return {
+        analysisText: response,
+        strengths: ["Good technical background"],
+        weaknesses: ["Could improve formatting"],
+        suggestions: ["Add more quantifiable achievements"],
+        jobFit: "medium",
+        score: 70
+      };
+    }
+  } catch (error) {
+    console.error('Error analyzing resume:', error);
+    toast.error('Failed to analyze resume');
+    
+    // Return a fallback response
+    return {
+      analysisText: "We couldn't analyze your resume at this time. Please try again later.",
+      strengths: [],
+      weaknesses: [],
+      suggestions: ["Try again later"],
+      jobFit: "medium",
+      score: 0
     };
   }
 };
