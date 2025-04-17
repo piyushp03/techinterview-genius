@@ -13,12 +13,10 @@ export default defineConfig(({ mode }) => ({
   plugins: [
     react({
       jsxImportSource: 'react',
-      // Add babel options to ensure regeneratorRuntime is available
-      babel: {
-        plugins: [
-          ["@babel/plugin-transform-runtime", { regenerator: true }]
-        ]
-      }
+      // SWC options directly, not inside a babel property
+      plugins: [
+        ["@babel/plugin-transform-runtime", { regenerator: true }]
+      ]
     }),
     mode === 'development' &&
     componentTagger(),
