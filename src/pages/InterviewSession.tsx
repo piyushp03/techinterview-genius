@@ -1,4 +1,3 @@
-
 import React, { useState, useEffect, useRef } from 'react';
 import { useParams, useNavigate } from 'react-router-dom';
 import { useAuth } from '@/context/AuthContext';
@@ -202,9 +201,7 @@ const InterviewSession = () => {
         return;
       }
       
-      // For coding questions, check if we need to analyze code
       if (sessionData?.is_coding_enabled && activeTab === 'code') {
-        // Generate question with coding context
         const codingContext = `The user has provided this code solution:\n\n\`\`\`${sessionData.language}\n${codeValue}\n\`\`\`\n\nPlease analyze this code as part of your response and ask a follow-up question.`;
         
         const aiResponse = await generateInterviewQuestion(
@@ -230,7 +227,6 @@ const InterviewSession = () => {
         
         setMessages(prev => [...prev, botMessage[0]]);
       } else {
-        // Standard question generation
         const aiResponse = await generateInterviewQuestion(
           sessionData.role_type,
           sessionData.category,
@@ -278,7 +274,6 @@ const InterviewSession = () => {
     try {
       setAnalyzeLoading(true);
       
-      // Update session status
       await supabase
         .from('interview_sessions')
         .update({ 
@@ -293,11 +288,9 @@ const InterviewSession = () => {
         window.clearInterval(timerRef.current);
       }
       
-      // Generate the interview results analysis
       try {
         const results = await analyzeInterviewResults(sessionData, messages);
         
-        // Save results to database
         await supabase
           .from('interview_results')
           .insert({
@@ -317,7 +310,6 @@ const InterviewSession = () => {
         console.error('Error analyzing interview results:', analysisError);
       }
       
-      // Redirect to results page after a short delay
       setTimeout(() => {
         navigate(`/interview/results/${id}`);
       }, 1500);
@@ -356,10 +348,8 @@ const InterviewSession = () => {
   };
 
   const saveCode = () => {
-    // Save code to localStorage as backup
     localStorage.setItem(`code-${id}`, codeValue);
     
-    // Save to database if possible
     try {
       supabase
         .from('interview_code_snippets')
@@ -371,7 +361,7 @@ const InterviewSession = () => {
           created_at: new Date().toISOString()
         })
         .then(() => toast.success('Code saved successfully'))
-        .catch(err => console.error('Error saving code:', err));
+        .catch((err) => console.error('Error saving code:', err));
     } catch (error) {
       console.error('Failed to save code:', error);
     }

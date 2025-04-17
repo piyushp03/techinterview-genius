@@ -8,7 +8,7 @@ import { toast } from 'sonner';
 const OPENAI_API_KEY = "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";
 
 // Types for API requests
-type ChatMessage = {
+export type ChatMessage = {
   role: 'system' | 'user' | 'assistant';
   content: string;
 };
@@ -77,12 +77,14 @@ export const generateInterviewQuestion = async (
   ${previousQuestions.length > 0 ? `Do not repeat any of these previous questions: ${previousQuestions.join('\n')}` : ''}
   ${resumeText ? `Consider the candidate's experience from this resume excerpt: ${resumeText.substring(0, 500)}...` : ''}`;
 
-  const messages: ChatMessage[] = [
+  const userPrompt = 'Generate a technical interview question.';
+
+  const chatMessages: ChatMessage[] = [
     { role: 'system', content: systemPrompt },
-    { role: 'user', content: 'Generate a technical interview question.' }
+    { role: 'user', content: userPrompt }
   ];
 
-  return getChatCompletion(messages);
+  return getChatCompletion(chatMessages);
 };
 
 /**
@@ -101,12 +103,12 @@ export const evaluateAnswer = async (
 
   const userPrompt = `Question: ${question}\n\nAnswer: ${answer}\n\nEvaluate this answer in detail.`;
 
-  const messages: ChatMessage[] = [
+  const chatMessages: ChatMessage[] = [
     { role: 'system', content: systemPrompt },
     { role: 'user', content: userPrompt }
   ];
 
-  return getChatCompletion(messages);
+  return getChatCompletion(chatMessages);
 };
 
 /**
@@ -140,12 +142,12 @@ export const analyzeInterviewSession = async (
 
   const userPrompt = `Interview Q&A Session:\n\n${qaPairs}\n\nPlease provide a detailed analysis of this interview session.`;
 
-  const messages: ChatMessage[] = [
+  const chatMessages: ChatMessage[] = [
     { role: 'system', content: systemPrompt },
     { role: 'user', content: userPrompt }
   ];
 
-  return getChatCompletion(messages, 'gpt-4o-mini');
+  return getChatCompletion(chatMessages, 'gpt-4o-mini');
 };
 
 /**
@@ -160,12 +162,12 @@ export const generateInterviewRecommendations = async (
 
   const userPrompt = `User Profile: ${JSON.stringify(userData)}\n\nPlease provide personalized interview preparation recommendations.`;
 
-  const messages: ChatMessage[] = [
+  const chatMessages: ChatMessage[] = [
     { role: 'system', content: systemPrompt },
     { role: 'user', content: userPrompt }
   ];
 
-  return getChatCompletion(messages);
+  return getChatCompletion(chatMessages);
 };
 
 export const analyzeAnswer = async (
@@ -191,12 +193,12 @@ export const analyzeAnswer = async (
 
     const userPrompt = `Question: ${question}\n\nAnswer: ${answer}\n\nProvide a JSON analysis.`;
 
-    const messages: ChatMessage[] = [
+    const chatMessages: ChatMessage[] = [
       { role: 'system', content: systemPrompt },
       { role: 'user', content: userPrompt }
     ];
 
-    const response = await getChatCompletion(messages);
+    const response = await getChatCompletion(chatMessages);
 
     // Try to parse the response as JSON
     try {
@@ -239,12 +241,12 @@ export const analyzeResume = async (resumeText: string): Promise<ResumeAnalysisR
 
     const userPrompt = `Resume text:\n\n${resumeText}\n\nProvide a detailed analysis as JSON.`;
 
-    const messages: ChatMessage[] = [
+    const chatMessages: ChatMessage[] = [
       { role: 'system', content: systemPrompt },
       { role: 'user', content: userPrompt }
     ];
 
-    const response = await getChatCompletion(messages, 'gpt-4o-mini');
+    const response = await getChatCompletion(chatMessages, 'gpt-4o-mini');
 
     // Try to parse the response as JSON
     try {
@@ -288,7 +290,7 @@ export const analyzeResume = async (resumeText: string): Promise<ResumeAnalysisR
 // Add the interview results analysis function
 export const analyzeInterviewResults = async (
   sessionData: any,
-  messages: any[]
+  sessionMessages: any[]
 ): Promise<{
   overallScore: number;
   feedback: string;
@@ -299,10 +301,10 @@ export const analyzeInterviewResults = async (
 }> => {
   try {
     // Filter only user answers
-    const userAnswers = messages.filter(msg => !msg.is_bot).map(msg => msg.content);
+    const userAnswers = sessionMessages.filter(msg => !msg.is_bot).map(msg => msg.content);
     
     // Filter only AI questions
-    const aiQuestions = messages.filter(msg => msg.is_bot).map(msg => msg.content);
+    const aiQuestions = sessionMessages.filter(msg => msg.is_bot).map(msg => msg.content);
     
     // Prepare Q&A pairs
     const qaPairs = aiQuestions.slice(0, userAnswers.length).map((q, i) => 
@@ -322,12 +324,12 @@ export const analyzeInterviewResults = async (
 
     const userPrompt = `Interview for ${sessionData.role_type} role, focusing on ${sessionData.category} using ${sessionData.language}:\n\n${qaPairs}\n\nProvide a detailed JSON analysis of this interview performance.`;
 
-    const messages: ChatMessage[] = [
+    const chatMessages: ChatMessage[] = [
       { role: 'system', content: systemPrompt },
       { role: 'user', content: userPrompt }
     ];
 
-    const response = await getChatCompletion(messages, 'gpt-4o-mini');
+    const response = await getChatCompletion(chatMessages, 'gpt-4o-mini');
     
     try {
       return JSON.parse(response);
