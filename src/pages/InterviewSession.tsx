@@ -1,29 +1,14 @@
 
-import React, { useState, useEffect, useRef } from 'react';
+import React, { useState, useEffect } from 'react';
 import { useParams, useNavigate } from 'react-router-dom';
 import { toast } from 'sonner';
-import Editor from '@monaco-editor/react';
 import { useAuth } from '@/context/AuthContext';
-import { useInterview } from '@/context/InterviewContext';
-import { analyzeAnswer } from '@/utils/interviewAnalysisService';
 import { Button } from '@/components/ui/button';
-import { Input } from '@/components/ui/input';
-import { Label } from '@/components/ui/label';
-import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card';
-import {
-  Select,
-  SelectContent,
-  SelectItem,
-  SelectTrigger,
-  SelectValue,
-} from "@/components/ui/select";
-import { Textarea } from "@/components/ui/textarea";
-import { Badge } from "@/components/ui/badge";
-import { Separator } from "@/components/ui/separator";
-import { Mic, Send, Loader2, ArrowLeft, CheckCircle, AlertTriangle } from "lucide-react";
-import useSpeechRecognition from '@/hooks/useSpeechRecognition';
+import { Card } from '@/components/ui/card';
+import { ArrowLeft, Loader2 } from "lucide-react";
 import { supabase } from '@/integrations/supabase/client';
 import InterviewPanel from '@/components/InterviewPanel';
+import { analyzeAnswer } from '@/utils/interviewAnalysisService';
 
 // Define types
 type Message = {
@@ -38,7 +23,6 @@ const InterviewSession = () => {
   const { id } = useParams<{ id: string }>();
   const navigate = useNavigate();
   const { user } = useAuth();
-  const { currentInterview } = useInterview();
   
   const [messages, setMessages] = useState<Message[]>([]);
   const [input, setInput] = useState<string>('');
@@ -99,6 +83,28 @@ const InterviewSession = () => {
       })) || [];
       
       setMessages(formattedMessages);
+      
+      // If no messages yet, create an initial bot message
+      if (formattedMessages.length === 0) {
+        const initialMessage = {
+          role: 'assistant' as const,
+          content: `Welcome to your ${session.role_type} interview focusing on ${session.language}. Let's start with your first question: Tell me about your background and experience with ${session.language}.`,
+          is_bot: true,
+          timestamp: new Date()
+        };
+        
+        setMessages([initialMessage]);
+        
+        // Save initial message to database
+        await supabase
+          .from('interview_messages')
+          .insert({
+            session_id: sessionId,
+            is_bot: true,
+            content: initialMessage.content,
+            created_at: new Date().toISOString()
+          });
+      }
       
     } catch (error: any) {
       console.error('Error loading interview session:', error);
@@ -204,6 +210,17 @@ const InterviewSession = () => {
   const toggleFullScreen = () => {
     setIsFullScreen(!isFullScreen);
   };
+  
+  if (isProcessing && messages.length === 0) {
+    return (
+      <div className="min-h-screen bg-background flex items-center justify-center">
+        <div className="text-center">
+          <Loader2 className="h-10 w-10 animate-spin mx-auto mb-4" />
+          <p className="text-lg">Loading interview session...</p>
+        </div>
+      </div>
+    );
+  }
   
   return (
     <div className="min-h-screen bg-background">

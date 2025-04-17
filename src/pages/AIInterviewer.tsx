@@ -1,4 +1,3 @@
-
 import React, { useState, useEffect, useRef } from 'react';
 import Navbar from '@/components/Navbar';
 import { Button } from '@/components/ui/button';
@@ -30,7 +29,7 @@ const AIInterviewer: React.FC = () => {
   const navigate = useNavigate();
   const [role, setRole] = useState<string>('Software Engineer');
   const [category, setCategory] = useState<string>('JavaScript');
-  const [page, setPage] = useState<'start' | 'interview' | 'results'>('start');
+  const [page, setPage<'start' | 'interview' | 'results'>>('start');
   const [messages, setMessages] = useState<any[]>([]);
   const [input, setInput] = useState<string>('');
   const [isSpeaking, setIsSpeaking] = useState<boolean>(true);
@@ -82,12 +81,13 @@ const AIInterviewer: React.FC = () => {
       if (user) {
         try {
           // Create a new interview session
-          const { data: session } = await supabase
+          const { data: session, error } = await supabase
             .from('interview_sessions')
             .insert({
               user_id: user.id,
               role_type: role,
               category: category,
+              language: category, // Using category as language since that's what we have
               start_time: new Date().toISOString(),
               questions_limit: 5,
               time_limit: 15,
@@ -95,21 +95,20 @@ const AIInterviewer: React.FC = () => {
             })
             .select()
             .single();
-          
-          // Save the first message
-          if (session) {
-            await supabase
-              .from('interview_messages')
-              .insert({
-                session_id: session.id,
-                is_bot: true,
-                content: initialQuestion,
-                user_id: user.id
-              });
-          }
-        } catch (error) {
-          console.error('Error saving interview session:', error);
+        
+        // Save the first message
+        if (session && !error) {
+          await supabase
+            .from('interview_messages')
+            .insert({
+              session_id: session.id,
+              is_bot: true,
+              content: initialQuestion,
+              created_at: new Date().toISOString()
+            });
         }
+      } catch (error) {
+        console.error('Error saving interview session:', error);
       }
     } catch (error) {
       console.error('Error starting interview:', error);

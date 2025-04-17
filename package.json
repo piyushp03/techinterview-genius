@@ -11,6 +11,7 @@
     "preview": "vite preview"
   },
   "dependencies": {
+    "@babel/plugin-transform-runtime": "^7.26.10",
     "@babel/runtime": "^7.27.0",
     "@codemirror/basic-setup": "^0.20.0",
     "@codemirror/commands": "^6.3.0",
