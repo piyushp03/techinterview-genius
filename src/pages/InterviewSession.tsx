@@ -40,6 +40,8 @@ const InterviewSession = () => {
   const loadInterviewSession = async (sessionId: string) => {
     setIsProcessing(true);
     try {
+      console.log("Loading interview session:", sessionId);
+      
       // Fetch the session data
       const { data: session, error: sessionError } = await supabase
         .from('interview_sessions')
@@ -48,13 +50,16 @@ const InterviewSession = () => {
         .single();
         
       if (sessionError) {
+        console.error("Session error:", sessionError);
         throw new Error(`Failed to load session: ${sessionError.message}`);
       }
       
       if (!session) {
+        console.error("No session found");
         throw new Error('Interview session not found');
       }
       
+      console.log("Session data loaded:", session);
       setSessionData(session);
       
       // Check if session is completed
@@ -70,8 +75,11 @@ const InterviewSession = () => {
         .order('created_at', { ascending: true });
         
       if (messagesError) {
+        console.error("Messages error:", messagesError);
         throw new Error(`Failed to load messages: ${messagesError.message}`);
       }
+      
+      console.log("Messages loaded:", messagesData);
       
       // Convert to the format expected by InterviewPanel
       const formattedMessages = messagesData?.map(msg => ({
@@ -86,6 +94,7 @@ const InterviewSession = () => {
       
       // If no messages yet, create an initial bot message
       if (formattedMessages.length === 0) {
+        console.log("Creating initial message");
         const initialMessage = {
           role: 'assistant' as const,
           content: `Welcome to your ${session.role_type} interview focusing on ${session.language}. Let's start with your first question: Tell me about your background and experience with ${session.language}.`,
