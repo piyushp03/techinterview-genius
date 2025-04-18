@@ -1,4 +1,3 @@
-
 /**
  * Analyzes a user's answer to an interview question and provides feedback
  */
@@ -9,9 +8,6 @@ export const analyzeAnswer = async (
   technology: string
 ): Promise<{ feedback: string; score?: number; insights?: string[] }> => {
   try {
-    // In a production environment, this would call an API to analyze the answer
-    // For now, we'll generate some basic feedback based on the question and answer
-    
     if (!answer || answer.trim().length < 10) {
       return { 
         feedback: "Your answer is too brief. Could you elaborate more on your experience and knowledge?",
@@ -20,10 +16,8 @@ export const analyzeAnswer = async (
       };
     }
     
-    // Check if the answer contains keywords related to the technology
     const containsTechnology = answer.toLowerCase().includes(technology.toLowerCase());
     
-    // Generate appropriate feedback based on the answer content
     let feedback = '';
     let score = 0;
     let insights = [];
@@ -38,14 +32,13 @@ export const analyzeAnswer = async (
       insights = ["Missing technology specifics", "Answer is too general"];
     }
     
-    // Add a follow-up question to continue the interview flow
-    feedback += `\n\nNext question: How do you handle challenging problems in your development workflow when working with ${technology}?`;
-    
     return { feedback, score, insights };
   } catch (error) {
     console.error("Error analyzing answer:", error);
     return {
-      feedback: "I'm having trouble analyzing your answer. Let's move on to the next question: Can you tell me about a challenging project you've worked on?",
+      feedback: "I'm having trouble analyzing your answer. Could you rephrase it or provide more details?",
+      score: 3,
+      insights: ["Error in analysis", "Need clarification"]
     };
   }
 };
