@@ -1,6 +1,25 @@
+
 /**
  * Analyzes a user's answer to an interview question and provides feedback
  */
+
+export interface AnalysisMetrics {
+  clarity: number;
+  conciseness: number;
+  depth: number;
+  fluency: number;
+  confidence: number;
+  overall: number;
+}
+
+export interface InterviewAnalysis {
+  metrics: AnalysisMetrics;
+  strengths: string[];
+  weaknesses: string[];
+  recommendations: string[];
+  summaryText: string;
+}
+
 export const analyzeAnswer = async (
   question: string,
   answer: string,
@@ -41,4 +60,35 @@ export const analyzeAnswer = async (
       insights: ["Error in analysis", "Need clarification"]
     };
   }
+};
+
+// This is a mock implementation until we integrate with a real analysis service
+export const generateInterviewAnalysis = (sessionId: string): Promise<InterviewAnalysis> => {
+  // Return a mock analysis
+  return Promise.resolve({
+    metrics: {
+      clarity: 7,
+      conciseness: 6,
+      depth: 8,
+      fluency: 7,
+      confidence: 6,
+      overall: 7
+    },
+    strengths: [
+      "Demonstrated good technical knowledge",
+      "Clear communication of complex concepts",
+      "Provided specific examples from past experience"
+    ],
+    weaknesses: [
+      "Could improve on conciseness in some answers",
+      "Missed some opportunities to highlight leadership skills",
+      "Technical explanations sometimes overly complex"
+    ],
+    recommendations: [
+      "Practice more concise answers to common questions",
+      "Prepare specific examples that demonstrate leadership and teamwork",
+      "Study up on the latest trends in the specific technology mentioned"
+    ],
+    summaryText: "Overall, the interview showed strong technical aptitude and good communication skills. With some refinement in delivery and more strategic highlighting of strengths, future interviews could be even more effective."
+  });
 };
