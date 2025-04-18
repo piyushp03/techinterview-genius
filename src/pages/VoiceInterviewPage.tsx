@@ -1,4 +1,3 @@
-
 import React, { useState, useEffect, useRef } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { Button } from '@/components/ui/button';
@@ -343,8 +342,7 @@ const VoiceInterviewPage: React.FC = () => {
             end_time: new Date().toISOString(),
             current_question_count: state.questionCount,
             questions_limit: 5,
-            time_limit: 10,
-            is_completed: true
+            time_limit: 10
           })
           .select();
         
