@@ -110,10 +110,13 @@ const NewInterview = () => {
 
     setIsLoading(true);
     try {
+      const sessionId = crypto.randomUUID();
+      
       const { data, error } = await supabase
         .from('interview_sessions')
         .insert({
-          user_id: user?.id,
+          id: sessionId,
+          user_id: user?.id || '00000000-0000-0000-0000-000000000000',
           role_type: roleType,
           language: language,
           category: category,
@@ -127,23 +130,24 @@ const NewInterview = () => {
         .select()
         .single();
 
-      if (error) throw error;
+      if (error) {
+        throw error;
+      }
 
       toast.success('Interview session created');
     
-    // Navigate to the interview session
-    if (data && data.id) {
-      navigate(`/interview/${data.id}`);
-    } else {
-      throw new Error('Failed to get interview session ID');
+      if (data && data.id) {
+        navigate(`/interview/${data.id}`);
+      } else {
+        throw new Error('Failed to get interview session ID');
+      }
+    } catch (error: any) {
+      console.error('Failed to create interview session:', error);
+      toast.error(error.message || 'Failed to create interview session');
+    } finally {
+      setIsLoading(false);
     }
-  } catch (error: any) {
-    console.error('Failed to create interview session:', error);
-    toast.error(error.message || 'Failed to create interview session');
-  } finally {
-    setIsLoading(false);
-  }
-};
+  };
 
   const handleSaveTemplate = async (values: z.infer<typeof formSchema>) => {
     setIsSaving(true);

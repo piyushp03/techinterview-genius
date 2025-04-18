@@ -62,33 +62,55 @@ export const analyzeAnswer = async (
   }
 };
 
-// This is a mock implementation until we integrate with a real analysis service
-export const generateInterviewAnalysis = (sessionId: string): Promise<InterviewAnalysis> => {
-  // Return a mock analysis
-  return Promise.resolve({
-    metrics: {
-      clarity: 7,
-      conciseness: 6,
-      depth: 8,
-      fluency: 7,
-      confidence: 6,
-      overall: 7
-    },
-    strengths: [
-      "Demonstrated good technical knowledge",
-      "Clear communication of complex concepts",
-      "Provided specific examples from past experience"
-    ],
-    weaknesses: [
-      "Could improve on conciseness in some answers",
-      "Missed some opportunities to highlight leadership skills",
-      "Technical explanations sometimes overly complex"
-    ],
-    recommendations: [
-      "Practice more concise answers to common questions",
-      "Prepare specific examples that demonstrate leadership and teamwork",
-      "Study up on the latest trends in the specific technology mentioned"
-    ],
-    summaryText: "Overall, the interview showed strong technical aptitude and good communication skills. With some refinement in delivery and more strategic highlighting of strengths, future interviews could be even more effective."
-  });
+// This implementation generates analysis for the interview
+export const generateInterviewAnalysis = async (sessionId: string): Promise<InterviewAnalysis> => {
+  try {
+    // In a real implementation, we would fetch the interview questions and answers
+    // from the database using the sessionId and analyze them
+    
+    // For now, return a mock analysis
+    return {
+      metrics: {
+        clarity: 7,
+        conciseness: 6,
+        depth: 8,
+        fluency: 7,
+        confidence: 6,
+        overall: 7
+      },
+      strengths: [
+        "Demonstrated good technical knowledge",
+        "Clear communication of complex concepts",
+        "Provided specific examples from past experience"
+      ],
+      weaknesses: [
+        "Could improve on conciseness in some answers",
+        "Missed some opportunities to highlight leadership skills",
+        "Technical explanations sometimes overly complex"
+      ],
+      recommendations: [
+        "Practice more concise answers to common questions",
+        "Prepare specific examples that demonstrate leadership and teamwork",
+        "Study up on the latest trends in the specific technology mentioned"
+      ],
+      summaryText: "Overall, the interview showed strong technical aptitude and good communication skills. With some refinement in delivery and more strategic highlighting of strengths, future interviews could be even more effective."
+    };
+  } catch (error) {
+    console.error("Error generating interview analysis:", error);
+    // Return a basic analysis even if there's an error
+    return {
+      metrics: {
+        clarity: 5,
+        conciseness: 5,
+        depth: 5,
+        fluency: 5,
+        confidence: 5,
+        overall: 5
+      },
+      strengths: ["Analysis unavailable due to technical issues"],
+      weaknesses: ["Analysis unavailable due to technical issues"],
+      recommendations: ["Try again later for a detailed analysis"],
+      summaryText: "We encountered an issue while analyzing your interview. Please try again later."
+    };
+  }
 };

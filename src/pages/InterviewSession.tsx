@@ -8,7 +8,7 @@ import InterviewPanel from '@/components/InterviewPanel';
 import { analyzeAnswer } from '@/utils/interviewAnalysisService';
 import { getChatCompletion } from '@/utils/openaiService';
 import { Button } from '@/components/ui/button';
-import { ArrowLeft } from 'lucide-react';
+import { ArrowLeft, Timer, XCircle } from 'lucide-react';
 
 const InterviewSession = () => {
   const { id } = useParams();
@@ -19,12 +19,21 @@ const InterviewSession = () => {
   const [isProcessing, setIsProcessing] = useState(false);
   const [input, setInput] = useState('');
   const [isFullScreen, setIsFullScreen] = useState(false);
+  const [timeRemaining, setTimeRemaining] = useState<number | null>(null);
+  const [timerIntervalId, setTimerIntervalId] = useState<number | null>(null);
 
   useEffect(() => {
     if (id) {
       loadSession();
       loadMessages();
     }
+    
+    return () => {
+      // Clear timer on unmount
+      if (timerIntervalId) {
+        clearInterval(timerIntervalId);
+      }
+    };
   }, [id]);
 
   const loadSession = async () => {
@@ -37,6 +46,35 @@ const InterviewSession = () => {
 
       if (error) throw error;
       setSession(data);
+      
+      // Initialize timer if time_limit is set
+      if (data.time_limit) {
+        let remainingTime = data.time_limit * 60; // Convert to seconds
+        
+        // If there's a start_time, calculate time elapsed
+        if (data.start_time) {
+          const startTime = new Date(data.start_time).getTime();
+          const currentTime = new Date().getTime();
+          const elapsedSeconds = Math.floor((currentTime - startTime) / 1000);
+          remainingTime = Math.max(0, data.time_limit * 60 - elapsedSeconds);
+        }
+        
+        setTimeRemaining(remainingTime);
+        
+        // Start the countdown timer
+        const intervalId = window.setInterval(() => {
+          setTimeRemaining(prev => {
+            if (prev !== null && prev <= 1) {
+              clearInterval(intervalId);
+              endInterview();
+              return 0;
+            }
+            return prev !== null ? prev - 1 : null;
+          });
+        }, 1000);
+        
+        setTimerIntervalId(intervalId);
+      }
 
     } catch (error) {
       console.error('Error loading session:', error);
@@ -198,6 +236,12 @@ const InterviewSession = () => {
 
   const endInterview = async () => {
     try {
+      // Clear timer if it exists
+      if (timerIntervalId) {
+        clearInterval(timerIntervalId);
+        setTimerIntervalId(null);
+      }
+
       await supabase
         .from('interview_sessions')
         .update({ 
@@ -217,15 +261,24 @@ const InterviewSession = () => {
       await saveMessage(completionMessage);
       setMessages(prev => [...prev, completionMessage]);
       
+      toast.success('Interview completed! Redirecting to results...');
+      
       // Navigate to results
       setTimeout(() => {
         navigate(`/interview/results/${id}`);
-      }, 3000);
+      }, 2000);
 
     } catch (error) {
       console.error('Error ending interview:', error);
       toast.error('Failed to end interview');
     }
+  };
+
+  const formatTime = (seconds: number): string => {
+    if (seconds === null) return '--:--';
+    const mins = Math.floor(seconds / 60);
+    const secs = seconds % 60;
+    return `${mins}:${secs.toString().padStart(2, '0')}`;
   };
 
   return (
@@ -237,9 +290,26 @@ const InterviewSession = () => {
             Back to Dashboard
           </Button>
           {session && (
-            <div className="text-right">
-              <h2 className="text-xl font-bold">{session.role_type} Interview</h2>
-              <p className="text-sm text-muted-foreground">{session.category}</p>
+            <div className="flex items-center gap-4">
+              {timeRemaining !== null && (
+                <div className="flex items-center text-amber-500">
+                  <Timer className="mr-1 h-4 w-4" />
+                  <span className="text-sm font-mono">{formatTime(timeRemaining)}</span>
+                </div>
+              )}
+              <Button 
+                variant="destructive" 
+                size="sm" 
+                onClick={endInterview}
+                className="flex items-center gap-1"
+              >
+                <XCircle className="h-4 w-4" />
+                End Interview
+              </Button>
+              <div className="text-right">
+                <h2 className="text-xl font-bold">{session.role_type} Interview</h2>
+                <p className="text-sm text-muted-foreground">{session.category}</p>
+              </div>
             </div>
           )}
         </div>
