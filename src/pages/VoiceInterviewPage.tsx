@@ -13,14 +13,23 @@ import { toast } from 'sonner';
 // Define SpeechRecognition interface to fix TypeScript errors
 interface SpeechRecognitionEvent extends Event {
   resultIndex: number;
-  results: {
-    [index: number]: {
-      isFinal: boolean;
-      [index: number]: {
-        transcript: string;
-      }
-    }
-  }
+  results: SpeechRecognitionResultList;
+}
+
+interface SpeechRecognitionResultList {
+  length: number;
+  [index: number]: SpeechRecognitionResult;
+}
+
+interface SpeechRecognitionResult {
+  isFinal: boolean;
+  length: number;
+  [index: number]: SpeechRecognitionAlternative;
+}
+
+interface SpeechRecognitionAlternative {
+  transcript: string;
+  confidence: number;
 }
 
 interface SpeechRecognitionErrorEvent extends Event {
@@ -48,7 +57,7 @@ const VoiceInterviewPage = () => {
   const navigate = useNavigate();
   const [isRecording, setIsRecording] = useState(false);
   const [transcript, setTranscript] = useState('');
-  const [messages, setMessages] = useState<{ role: string; content: string }[]>([]);
+  const [messages, setMessages] = useState<Array<{role: 'user' | 'assistant', content: string}>>([]);
   const [isProcessing, setIsProcessing] = useState(false);
   const [sessionId, setSessionId] = useState<string | null>(null);
   const [currentQuestionCount, setCurrentQuestionCount] = useState(0);
@@ -62,11 +71,13 @@ const VoiceInterviewPage = () => {
   const [isInterviewEnded, setIsInterviewEnded] = useState(false);
   
   const recognitionRef = useRef<SpeechRecognition | null>(null);
-  const messagesEndRef = useRef<HTMLDivElement>(null);
+  const messagesEndRef = useRef<HTMLDivElement | null>(null);
 
   useEffect(() => {
     if (messagesEndRef.current) {
-      messagesEndRef.current.scrollIntoView({ behavior: 'smooth' });
+      messagesEndRef.current.scrollIntoView({ 
+        behavior: 'smooth' 
+      });
     }
   }, [messages]);
 
