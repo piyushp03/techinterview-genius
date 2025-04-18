@@ -1,578 +1,411 @@
 import React, { useState, useEffect, useRef } from 'react';
 import { useNavigate } from 'react-router-dom';
-import { Button } from '@/components/ui/button';
-import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
-import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs';
-import { Progress } from '@/components/ui/progress';
-import { Badge } from '@/components/ui/badge';
-import { 
-  Mic, MicOff, Star, Clock, ArrowLeft, Volume2, VolumeX, 
-  PlayCircle, PauseCircle, MessageSquare
-} from 'lucide-react';
-import { toast } from 'sonner';
-import Navbar from '@/components/Navbar';
 import { useAuth } from '@/context/AuthContext';
 import { supabase } from '@/integrations/supabase/client';
-import { AudioRecorder, transcribeAudio, synthesizeSpeech, playAudio } from '@/utils/speechRecognitionService';
-import { analyzeAnswer } from '@/utils/interviewAnalysisService';
-import { getChatCompletion } from '@/utils/openaiService';
+import { v4 as uuidv4 } from 'uuid';
+import Navbar from '@/components/Navbar';
+import { Button } from '@/components/ui/button';
+import { Card, CardContent, CardDescription, CardFooter, CardHeader, CardTitle } from '@/components/ui/card';
+import { Mic, MicOff, Play, Square, Send, Loader2 } from 'lucide-react';
+import { toast } from 'sonner';
 
-type Message = {
-  id: string;
-  role: 'user' | 'assistant';
-  content: string;
-  timestamp: Date;
-};
-
-type InterviewState = {
-  isActive: boolean;
-  isCompleted: boolean;
-  messages: Message[];
-  timeRemaining: number;
-  questionCount: number;
-  currentAnswer: string;
-  role: string;
-  category: string;
-  sessionId: string;
-};
-
-const VoiceInterviewPage: React.FC = () => {
-  const navigate = useNavigate();
+const VoiceInterviewPage = () => {
   const { user } = useAuth();
-  const [state, setState] = useState<InterviewState>({
-    isActive: false,
-    isCompleted: false,
-    messages: [],
-    timeRemaining: 10 * 60, // 10 minutes in seconds
-    questionCount: 0,
-    currentAnswer: '',
-    role: 'Software Engineer',
-    category: 'JavaScript',
-    sessionId: `session-${Date.now()}`
-  });
-  
+  const navigate = useNavigate();
   const [isRecording, setIsRecording] = useState(false);
-  const [isSpeaking, setIsSpeaking] = useState(true);
+  const [transcript, setTranscript] = useState('');
+  const [messages, setMessages] = useState<{ role: string; content: string }[]>([]);
   const [isProcessing, setIsProcessing] = useState(false);
-  const [activeTab, setActiveTab] = useState<string>('interview');
+  const [sessionId, setSessionId] = useState<string | null>(null);
+  const [currentQuestionCount, setCurrentQuestionCount] = useState(0);
+  const [questionsLimit] = useState(5);
+  const [timeLimit] = useState(30); // 30 minutes
+  const [startTime, setStartTime] = useState<string | null>(null);
+  const [endTime, setEndTime] = useState<string | null>(null);
+  const [role] = useState('Frontend Developer');
+  const [category] = useState('Technical');
+  const [isInterviewStarted, setIsInterviewStarted] = useState(false);
+  const [isInterviewEnded, setIsInterviewEnded] = useState(false);
   
-  const audioRecorderRef = useRef<AudioRecorder | null>(null);
-  const timerRef = useRef<number | null>(null);
+  const recognitionRef = useRef<any>(null);
   const messagesEndRef = useRef<HTMLDivElement>(null);
-  
+
   useEffect(() => {
-    if (state.isActive && !state.isCompleted && state.timeRemaining > 0) {
-      timerRef.current = window.setInterval(() => {
-        setState(prev => ({
-          ...prev,
-          timeRemaining: prev.timeRemaining - 1
-        }));
-      }, 1000);
+    if (messagesEndRef.current) {
+      messagesEndRef.current.scrollIntoView({ behavior: 'smooth' });
+    }
+  }, [messages]);
+
+  useEffect(() => {
+    // Initialize Web Speech API
+    if ('webkitSpeechRecognition' in window || 'SpeechRecognition' in window) {
+      const SpeechRecognition = window.webkitSpeechRecognition || window.SpeechRecognition;
+      recognitionRef.current = new SpeechRecognition();
+      recognitionRef.current.continuous = true;
+      recognitionRef.current.interimResults = true;
+      
+      recognitionRef.current.onresult = (event: any) => {
+        let interimTranscript = '';
+        let finalTranscript = '';
+        
+        for (let i = event.resultIndex; i < event.results.length; ++i) {
+          if (event.results[i].isFinal) {
+            finalTranscript += event.results[i][0].transcript;
+          } else {
+            interimTranscript += event.results[i][0].transcript;
+          }
+        }
+        
+        setTranscript(finalTranscript || interimTranscript);
+      };
+      
+      recognitionRef.current.onerror = (event: any) => {
+        console.error('Speech recognition error', event.error);
+        toast.error(`Speech recognition error: ${event.error}`);
+        setIsRecording(false);
+      };
+    } else {
+      toast.error('Speech recognition is not supported in this browser');
     }
     
     return () => {
-      if (timerRef.current) {
-        window.clearInterval(timerRef.current);
+      if (recognitionRef.current) {
+        recognitionRef.current.stop();
       }
     };
-  }, [state.isActive, state.isCompleted, state.timeRemaining]);
-  
-  useEffect(() => {
-    if (state.timeRemaining <= 0 && state.isActive) {
-      endInterview();
-    }
-  }, [state.timeRemaining, state.isActive]);
-  
-  useEffect(() => {
-    scrollToBottom();
-  }, [state.messages]);
-  
-  useEffect(() => {
-    if (state.isActive && state.messages.length === 0) {
-      startNewInterview();
-    }
-  }, [state.isActive]);
-  
-  const scrollToBottom = () => {
-    messagesEndRef.current?.scrollIntoView({ behavior: 'smooth' });
-  };
-  
-  const startNewInterview = async () => {
-    setIsProcessing(true);
-    
-    try {
-      // Generate the first question
-      const initialQuestion = await getChatCompletion([
-        {
-          role: 'system',
-          content: `You are an AI interviewer conducting a technical interview for a ${state.role} position, focusing on ${state.category}. Start with a brief introduction and ask your first interview question.`
-        }
-      ]);
-      
-      const welcomeMessage: Message = {
-        id: `msg-${Date.now()}`,
-        role: 'assistant',
-        content: initialQuestion,
-        timestamp: new Date()
-      };
-      
-      setState(prev => ({
-        ...prev,
-        messages: [welcomeMessage],
-        questionCount: 1
-      }));
-      
-      // Speak the welcome message
-      if (isSpeaking) {
-        speakText(initialQuestion);
-      }
-      
-      // Save to database
-      await saveMessageToDatabase(welcomeMessage);
-    } catch (error) {
-      console.error('Error starting interview:', error);
-      toast.error('Failed to start interview. Please try again.');
-    } finally {
-      setIsProcessing(false);
+  }, []);
+
+  const startRecording = () => {
+    if (recognitionRef.current) {
+      recognitionRef.current.start();
+      setIsRecording(true);
     }
   };
-  
-  const startRecording = async () => {
-    if (isRecording || isProcessing || state.isCompleted) return;
-    
-    setIsRecording(true);
-    toast.success('Whisper AI speech recognition activated');
-    
-    // Create a new audio recorder
-    audioRecorderRef.current = new AudioRecorder(async (audioBlob) => {
-      setIsRecording(false);
-      
-      setIsProcessing(true);
-      const text = await transcribeAudio(audioBlob);
-      
-      if (text) {
-        // Add user message
-        const userMessage: Message = {
-          id: `msg-${Date.now()}`,
-          role: 'user',
-          content: text,
-          timestamp: new Date()
-        };
-        
-        setState(prev => ({
-          ...prev,
-          messages: [...prev.messages, userMessage],
-          currentAnswer: ''
-        }));
-        
-        // Save to database
-        await saveMessageToDatabase(userMessage);
-        
-        // Generate AI response
-        await generateAIResponse(text);
-      } else {
-        setIsProcessing(false);
-        toast.error('No speech detected. Please try again.');
-      }
-    });
-    
-    await audioRecorderRef.current.start();
-  };
-  
+
   const stopRecording = () => {
-    if (audioRecorderRef.current) {
-      audioRecorderRef.current.stop();
+    if (recognitionRef.current) {
+      recognitionRef.current.stop();
       setIsRecording(false);
     }
   };
-  
-  const generateAIResponse = async (userInput: string) => {
+
+  const startInterview = async () => {
     try {
-      // Extract previous messages for context
-      const contextMessages = state.messages.map(msg => ({
-        role: msg.role === 'user' ? 'user' as const : 'assistant' as const,
-        content: msg.content
-      }));
+      setIsProcessing(true);
       
-      // Add the new user message
-      contextMessages.push({
-        role: 'user' as const,
-        content: userInput
-      });
+      // Create a new interview session
+      const newSessionId = uuidv4();
+      const now = new Date().toISOString();
       
-      // Generate AI response
-      const aiResponseText = await getChatCompletion([
-        {
-          role: 'system',
-          content: `You are an AI interviewer conducting a technical interview for a ${state.role} position, focusing on ${state.category}. 
-          Ask challenging technical questions related to the role. 
-          Evaluate the candidate's responses and ask meaningful follow-up questions. 
-          Keep your responses concise and focused on one question at a time.`
-        },
-        ...contextMessages
+      const { error } = await supabase
+        .from('interview_sessions')
+        .insert({
+          id: newSessionId,
+          user_id: user?.id,
+          role_type: role,
+          category,
+          language: 'english',
+          start_time: now,
+          current_question_count: 0,
+          questions_limit: questionsLimit,
+          time_limit: timeLimit,
+        });
+      
+      if (error) throw error;
+      
+      setSessionId(newSessionId);
+      setStartTime(now);
+      setIsInterviewStarted(true);
+      
+      // Add initial AI message
+      const initialPrompt = `You are an AI interviewer conducting a voice interview for a ${role} position. Ask me technical questions one at a time. Wait for my response before asking the next question. Start by introducing yourself briefly and ask your first question.`;
+      
+      const initialResponse = await fetchAIResponse([{ role: 'user', content: initialPrompt }]);
+      
+      setMessages([
+        { role: 'assistant', content: initialResponse }
       ]);
       
-      // Create the AI response message
-      const aiMessage: Message = {
-        id: `msg-${Date.now()}`,
-        role: 'assistant',
-        content: aiResponseText,
-        timestamp: new Date()
-      };
+      setCurrentQuestionCount(1);
       
-      // Update state with new message
-      setState(prev => ({
-        ...prev,
-        messages: [...prev.messages, aiMessage],
-        questionCount: prev.questionCount + 1
-      }));
-      
-      // Save to database
-      await saveMessageToDatabase(aiMessage);
-      
-      // Speak the response if voice is enabled
-      if (isSpeaking) {
-        speakText(aiResponseText);
-      }
-      
-      // Check if we should end the interview
-      if (state.questionCount >= 5) {
-        setTimeout(() => {
-          endInterview();
-        }, 5000);
-      }
-    } catch (error) {
-      console.error('Error generating AI response:', error);
-      toast.error('Failed to generate AI response. Please try again.');
+    } catch (error: any) {
+      console.error('Error starting interview:', error);
+      toast.error('Failed to start interview');
     } finally {
       setIsProcessing(false);
     }
   };
-  
-  const saveMessageToDatabase = async (message: Message) => {
-    if (!user) return;
-    
-    try {
-      await supabase
-        .from('interview_messages')
-        .insert({
-          session_id: state.sessionId,
-          is_bot: message.role === 'assistant',
-          content: message.content,
-          created_at: message.timestamp.toISOString(),
-          user_id: user.id
-        });
-    } catch (error) {
-      console.error('Error saving message to database:', error);
-    }
-  };
-  
-  const toggleVoice = () => {
-    setIsSpeaking(!isSpeaking);
-    toast.success(isSpeaking ? 'Voice disabled' : 'Voice enabled');
-  };
-  
-  const speakText = async (text: string) => {
-    try {
-      const audioData = await synthesizeSpeech(text);
-      if (audioData) {
-        await playAudio(audioData);
-      }
-    } catch (error) {
-      console.error('Error speaking text:', error);
-    }
-  };
-  
-  const startInterview = () => {
-    setState(prev => ({
-      ...prev,
-      isActive: true,
-      isCompleted: false,
-      messages: [],
-      timeRemaining: 10 * 60,
-      questionCount: 0
-    }));
-  };
-  
+
   const endInterview = async () => {
-    // Clear timer
-    if (timerRef.current) {
-      window.clearInterval(timerRef.current);
+    try {
+      setIsProcessing(true);
+      
+      if (!sessionId) return;
+      
+      const now = new Date().toISOString();
+      setEndTime(now);
+      
+      // Update the interview session
+      await updateInterview();
+      
+      // Generate final feedback
+      const feedbackPrompt = "Please provide comprehensive feedback on my interview performance. Highlight strengths, areas for improvement, and give specific advice on how I can better prepare for future interviews.";
+      
+      const newMessages = [...messages, { role: 'user', content: feedbackPrompt }];
+      const feedbackResponse = await fetchAIResponse(newMessages);
+      
+      setMessages([...newMessages, { role: 'assistant', content: feedbackResponse }]);
+      setIsInterviewEnded(true);
+      
+    } catch (error: any) {
+      console.error('Error ending interview:', error);
+      toast.error('Failed to end interview');
+    } finally {
+      setIsProcessing(false);
     }
-    
-    // Stop recording if active
-    if (isRecording) {
-      stopRecording();
-    }
-    
-    // Mark interview as completed
-    setState(prev => ({
-      ...prev,
-      isActive: false,
-      isCompleted: true
-    }));
-    
-    // Add completion message
-    const completionMessage: Message = {
-      id: `msg-${Date.now()}`,
-      role: 'assistant',
-      content: "Thank you for completing the interview. You can now review your performance in the Results tab.",
-      timestamp: new Date()
+  };
+
+  const updateInterview = async () => {
+    // Update this section to include the required language field
+    const interviewData = {
+      id: sessionId,
+      user_id: user?.id,
+      role_type: role,
+      category,
+      language: 'english', // Add the required language field
+      start_time: startTime,
+      end_time: endTime,
+      current_question_count: currentQuestionCount,
+      questions_limit: questionsLimit,
+      time_limit: timeLimit,
     };
-    
-    setState(prev => ({
-      ...prev,
-      messages: [...prev.messages, completionMessage]
-    }));
-    
-    // Save completion message
-    await saveMessageToDatabase(completionMessage);
-    
-    // Save session completion status
-    if (user) {
-      try {
-        await supabase
-          .from('interview_sessions')
-          .insert({
-            id: state.sessionId,
-            user_id: user.id,
-            role_type: state.role,
-            category: state.category,
-            start_time: new Date(Date.now() - state.timeRemaining * 1000).toISOString(),
-            end_time: new Date().toISOString(),
-            current_question_count: state.questionCount,
-            questions_limit: 5,
-            time_limit: 10
-          })
-          .select();
-        
-        toast.success('Interview completed and saved');
-        
-        // Switch to results tab
-        setActiveTab('results');
-      } catch (error) {
-        console.error('Error saving interview session:', error);
-        toast.error('Failed to save interview session');
-      }
+
+    const { error } = await supabase
+      .from('interview_sessions')
+      .update(interviewData)
+      .eq('id', sessionId);
+
+    if (error) {
+      console.error('Error updating interview:', error);
+      throw error;
     }
   };
-  
-  const formatTime = (seconds: number) => {
-    const minutes = Math.floor(seconds / 60);
-    const remainingSeconds = seconds % 60;
-    return `${minutes}:${remainingSeconds.toString().padStart(2, '0')}`;
-  };
-  
-  const renderChatBubble = (message: Message, index: number) => {
-    const isUser = message.role === 'user';
+
+  const sendMessage = async () => {
+    if (!transcript.trim()) return;
     
-    return (
-      <div
-        key={message.id}
-        className={`flex ${isUser ? 'justify-end' : 'justify-start'} mb-4`}
-      >
-        <div className={`flex ${isUser ? 'flex-row-reverse' : 'flex-row'} max-w-3/4`}>
-          <div className={`p-4 rounded-lg ${isUser ? 'bg-primary text-primary-foreground' : 'bg-muted'}`}>
-            <p>{message.content}</p>
-            
-            {!isUser && isSpeaking && (
-              <Button
-                variant="ghost"
-                size="sm"
-                onClick={() => speakText(message.content)}
-                className="mt-2"
-              >
-                <PlayCircle className="mr-2 h-4 w-4" />
-                Play again
-              </Button>
-            )}
-          </div>
-        </div>
-      </div>
-    );
+    try {
+      setIsProcessing(true);
+      
+      // Add user message
+      const userMessage = { role: 'user', content: transcript };
+      const updatedMessages = [...messages, userMessage];
+      setMessages(updatedMessages);
+      setTranscript('');
+      
+      // Get AI response
+      const aiResponse = await fetchAIResponse(updatedMessages);
+      
+      // Add AI message
+      setMessages([...updatedMessages, { role: 'assistant', content: aiResponse }]);
+      
+      // Update question count
+      const newQuestionCount = currentQuestionCount + 1;
+      setCurrentQuestionCount(newQuestionCount);
+      
+      // Save message to database
+      if (sessionId) {
+        await supabase
+          .from('interview_messages')
+          .insert([
+            {
+              session_id: sessionId,
+              content: transcript,
+              is_bot: false,
+            },
+            {
+              session_id: sessionId,
+              content: aiResponse,
+              is_bot: true,
+            }
+          ]);
+      }
+      
+      // Check if we've reached the question limit
+      if (newQuestionCount >= questionsLimit && !isInterviewEnded) {
+        toast.info('You have reached the question limit. The interview will end now.');
+        await endInterview();
+      }
+      
+    } catch (error: any) {
+      console.error('Error sending message:', error);
+      toast.error('Failed to send message');
+    } finally {
+      setIsProcessing(false);
+    }
   };
-  
-  if (!state.isActive && !state.isCompleted) {
-    return (
-      <div className="min-h-screen bg-background">
-        <Navbar />
-        <main className="container py-8">
-          <div className="max-w-4xl mx-auto">
-            <Card>
-              <CardHeader>
-                <CardTitle>Voice-Based AI Interviewer</CardTitle>
-              </CardHeader>
-              <CardContent>
-                <div className="space-y-6">
-                  <p className="text-muted-foreground">
-                    Practice your interview skills with our voice-based AI interviewer. The AI will ask you questions and evaluate your responses in real-time.
-                  </p>
-                  
-                  <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-                    <div>
-                      <h3 className="text-sm font-medium mb-2">Role</h3>
-                      <select
-                        className="w-full p-2 border rounded"
-                        value={state.role}
-                        onChange={(e) => setState(prev => ({ ...prev, role: e.target.value }))}
-                      >
-                        <option value="Software Engineer">Software Engineer</option>
-                        <option value="Frontend Developer">Frontend Developer</option>
-                        <option value="Backend Developer">Backend Developer</option>
-                        <option value="Full Stack Developer">Full Stack Developer</option>
-                        <option value="Data Scientist">Data Scientist</option>
-                        <option value="DevOps Engineer">DevOps Engineer</option>
-                      </select>
-                    </div>
-                    
-                    <div>
-                      <h3 className="text-sm font-medium mb-2">Category</h3>
-                      <select
-                        className="w-full p-2 border rounded"
-                        value={state.category}
-                        onChange={(e) => setState(prev => ({ ...prev, category: e.target.value }))}
-                      >
-                        <option value="JavaScript">JavaScript</option>
-                        <option value="React">React</option>
-                        <option value="Python">Python</option>
-                        <option value="System Design">System Design</option>
-                        <option value="Data Structures">Data Structures</option>
-                        <option value="Algorithms">Algorithms</option>
-                        <option value="Behavioral">Behavioral</option>
-                      </select>
-                    </div>
-                  </div>
-                  
-                  <div className="pt-4">
-                    <Button onClick={startInterview} className="w-full">
-                      Start Voice Interview
-                    </Button>
-                  </div>
-                </div>
-              </CardContent>
-            </Card>
-          </div>
-        </main>
-      </div>
-    );
-  }
-  
+
+  const fetchAIResponse = async (messageHistory: { role: string; content: string }[]) => {
+    try {
+      // This would be replaced with your actual AI API call
+      // For now, we'll simulate a response
+      await new Promise(resolve => setTimeout(resolve, 1000));
+      
+      // Simulate AI responses based on the interview stage
+      if (messageHistory.length === 1) {
+        return "Hello! I'm your AI interviewer today for the Frontend Developer position. Let's start with a question: Can you explain the difference between 'let', 'const', and 'var' in JavaScript?";
+      } else if (isInterviewEnded) {
+        return "Thank you for participating in this interview. Overall, you demonstrated good technical knowledge. Some areas of strength include your explanations of JavaScript concepts. Areas for improvement might include providing more concrete examples. Keep practicing and good luck with your job search!";
+      } else {
+        const questions = [
+          "How would you optimize the performance of a React application?",
+          "Can you explain how CSS specificity works?",
+          "What's the difference between controlled and uncontrolled components in React?",
+          "How do you handle state management in large React applications?",
+          "Explain the concept of event delegation in JavaScript."
+        ];
+        return questions[currentQuestionCount % questions.length];
+      }
+    } catch (error) {
+      console.error('Error fetching AI response:', error);
+      return "I'm sorry, I couldn't process that. Could you try again?";
+    }
+  };
+
   return (
-    <div className="min-h-screen bg-background">
+    <div className="min-h-screen bg-background flex flex-col">
       <Navbar />
-      <main className="container py-6">
-        <div className="flex justify-between items-center mb-6">
-          <Button variant="ghost" onClick={() => navigate('/dashboard')}>
-            <ArrowLeft className="mr-2 h-4 w-4" />
-            Back to Dashboard
-          </Button>
-          
-          <div>
-            <h1 className="text-xl font-bold">{state.role} Interview - {state.category}</h1>
-          </div>
-          
-          <div className="flex items-center gap-2">
-            <Button
-              variant="ghost"
-              size="icon"
-              onClick={toggleVoice}
-              title={isSpeaking ? "Mute AI voice" : "Enable AI voice"}
-            >
-              {isSpeaking ? <Volume2 className="h-5 w-5" /> : <VolumeX className="h-5 w-5" />}
-            </Button>
-          </div>
-        </div>
+      <main className="flex-1 container py-8 px-4 md:px-6 flex flex-col">
+        <h1 className="text-3xl font-bold mb-6">AI Voice Interviewer</h1>
         
-        <Tabs value={activeTab} onValueChange={setActiveTab}>
-          <TabsList className="mb-4">
-            <TabsTrigger value="interview">Interview</TabsTrigger>
-            <TabsTrigger value="results" disabled={!state.isCompleted}>Results</TabsTrigger>
-          </TabsList>
+        <Card className="flex-1 flex flex-col">
+          <CardHeader>
+            <CardTitle>Voice Interview Session</CardTitle>
+            <CardDescription>
+              {!isInterviewStarted 
+                ? "Start a voice-based interview with our AI interviewer" 
+                : `${role} Interview - Question ${currentQuestionCount} of ${questionsLimit}`}
+            </CardDescription>
+          </CardHeader>
           
-          <TabsContent value="interview">
-            <Card className="h-[70vh] flex flex-col">
-              <div className="flex justify-between items-center p-4 border-b">
-                <div className="flex items-center gap-2">
-                  <Clock className="h-4 w-4" />
-                  <span>{formatTime(state.timeRemaining)}</span>
-                </div>
-                
-                <Badge variant="outline">
-                  Question {state.questionCount}/5
-                </Badge>
-                
-                {state.isActive && !state.isCompleted && (
-                  <Button variant="ghost" size="sm" onClick={endInterview}>
-                    End Interview
-                  </Button>
-                )}
+          <CardContent className="flex-1 flex flex-col">
+            {!isInterviewStarted ? (
+              <div className="flex flex-col items-center justify-center h-64 space-y-4">
+                <p className="text-center text-muted-foreground">
+                  Click the button below to start your voice interview. 
+                  The AI will ask you questions and you can respond using your microphone.
+                </p>
+                <Button 
+                  onClick={startInterview} 
+                  disabled={isProcessing}
+                  className="gap-2"
+                >
+                  {isProcessing ? (
+                    <>
+                      <Loader2 className="h-4 w-4 animate-spin" />
+                      Preparing Interview...
+                    </>
+                  ) : (
+                    <>
+                      <Play className="h-4 w-4" />
+                      Start Interview
+                    </>
+                  )}
+                </Button>
               </div>
-              
-              <div className="flex-1 overflow-y-auto p-4">
-                {state.messages.map((message, index) => renderChatBubble(message, index))}
-                <div ref={messagesEndRef} />
-              </div>
-              
-              <div className="p-4 border-t">
-                {state.isActive && !state.isCompleted ? (
-                  <div className="flex flex-col items-center">
-                    <Button
-                      size="lg"
-                      className={isRecording ? "bg-red-500 hover:bg-red-600" : "bg-primary"}
-                      onClick={isRecording ? stopRecording : startRecording}
-                      disabled={isProcessing}
+            ) : (
+              <>
+                <div className="flex-1 overflow-y-auto mb-4 space-y-4">
+                  {messages.map((message, index) => (
+                    <div 
+                      key={index} 
+                      className={`flex ${message.role === 'user' ? 'justify-end' : 'justify-start'}`}
                     >
-                      {isRecording ? (
-                        <>
-                          <MicOff className="mr-2 h-5 w-5" />
-                          Stop Recording
-                        </>
-                      ) : (
-                        <>
-                          <Star className="mr-2 h-5 w-5" />
-                          {isProcessing ? "Processing..." : "Speak Your Answer"}
-                        </>
-                      )}
-                    </Button>
+                      <div 
+                        className={`max-w-[80%] rounded-lg p-3 ${
+                          message.role === 'user' 
+                            ? 'bg-primary text-primary-foreground' 
+                            : 'bg-muted'
+                        }`}
+                      >
+                        {message.content}
+                      </div>
+                    </div>
+                  ))}
+                  <div ref={messagesEndRef} />
+                </div>
+                
+                {!isInterviewEnded && (
+                  <div className="space-y-2">
+                    <div className="relative">
+                      <textarea
+                        className="w-full h-24 p-3 rounded-md border resize-none bg-background"
+                        placeholder="Your response will appear here as you speak..."
+                        value={transcript}
+                        onChange={(e) => setTranscript(e.target.value)}
+                        disabled={isProcessing}
+                      />
+                      <div className="absolute bottom-2 right-2 flex gap-2">
+                        {isRecording ? (
+                          <Button 
+                            size="sm" 
+                            variant="destructive" 
+                            onClick={stopRecording}
+                            disabled={isProcessing}
+                          >
+                            <MicOff className="h-4 w-4" />
+                          </Button>
+                        ) : (
+                          <Button 
+                            size="sm" 
+                            onClick={startRecording}
+                            disabled={isProcessing}
+                          >
+                            <Mic className="h-4 w-4" />
+                          </Button>
+                        )}
+                      </div>
+                    </div>
                     
-                    <p className="mt-2 text-sm text-muted-foreground">
-                      {isRecording 
-                        ? "Recording... Click to stop when you're done speaking" 
-                        : "Click the button and speak your answer clearly"}
-                    </p>
-                  </div>
-                ) : (
-                  <div className="text-center">
-                    <p className="text-lg font-medium mb-4">Interview Completed</p>
-                    <Button onClick={() => setActiveTab('results')}>
-                      View Results
-                    </Button>
+                    <div className="flex justify-between">
+                      <Button 
+                        variant="outline" 
+                        onClick={endInterview}
+                        disabled={isProcessing || isInterviewEnded}
+                      >
+                        <Square className="h-4 w-4 mr-2" />
+                        End Interview
+                      </Button>
+                      
+                      <Button 
+                        onClick={sendMessage}
+                        disabled={!transcript.trim() || isProcessing || isInterviewEnded}
+                      >
+                        {isProcessing ? (
+                          <Loader2 className="h-4 w-4 animate-spin mr-2" />
+                        ) : (
+                          <Send className="h-4 w-4 mr-2" />
+                        )}
+                        Send Response
+                      </Button>
+                    </div>
                   </div>
                 )}
-              </div>
-            </Card>
-          </TabsContent>
+              </>
+            )}
+          </CardContent>
           
-          <TabsContent value="results">
-            <Card>
-              <CardHeader>
-                <CardTitle>Interview Results</CardTitle>
-              </CardHeader>
-              <CardContent>
-                <div className="text-center p-8">
-                  <h3 className="text-xl font-medium mb-4">Analyzing your interview responses...</h3>
-                  <p className="text-muted-foreground mb-6">
-                    Our AI is reviewing your responses and preparing detailed feedback.
-                  </p>
-                  <div className="w-full max-w-md mx-auto">
-                    <Progress value={45} className="h-2 mb-2" />
-                  </div>
-                  <p className="text-sm text-muted-foreground">This may take a few moments</p>
-                </div>
-              </CardContent>
-            </Card>
-          </TabsContent>
-        </Tabs>
+          {isInterviewEnded && (
+            <CardFooter>
+              <Button 
+                className="w-full" 
+                onClick={() => navigate('/history')}
+              >
+                View Interview History
+              </Button>
+            </CardFooter>
+          )}
+        </Card>
       </main>
     </div>
   );
