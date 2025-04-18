@@ -13,8 +13,9 @@ export default defineConfig(({ mode }) => ({
   plugins: [
     react({
       jsxImportSource: 'react',
-      // Simplify the babel plugin configuration
-      plugins: []
+      plugins: [
+        ["@babel/plugin-transform-runtime", { regenerator: true }]
+      ]
     }),
     mode === 'development' &&
     componentTagger(),

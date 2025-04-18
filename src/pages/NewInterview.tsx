@@ -127,23 +127,26 @@ const NewInterview = () => {
         .select()
         .single();
 
-      if (error) throw error;
+      if (error) {
+        throw error;
+      }
 
       toast.success('Interview session created');
-    
-    // Navigate to the interview session
-    if (data && data.id) {
-      navigate(`/interview/${data.id}`);
-    } else {
-      throw new Error('Failed to get interview session ID');
+      console.log('Created interview session with ID:', data.id);
+      
+      // Navigate to the interview session
+      if (data && data.id) {
+        navigate(`/interview/${data.id}`);
+      } else {
+        throw new Error('Failed to get interview session ID');
+      }
+    } catch (error: any) {
+      console.error('Failed to create interview session:', error);
+      toast.error(error.message || 'Failed to create interview session');
+    } finally {
+      setIsLoading(false);
     }
-  } catch (error: any) {
-    console.error('Failed to create interview session:', error);
-    toast.error(error.message || 'Failed to create interview session');
-  } finally {
-    setIsLoading(false);
-  }
-};
+  };
 
   const handleSaveTemplate = async (values: z.infer<typeof formSchema>) => {
     setIsSaving(true);
