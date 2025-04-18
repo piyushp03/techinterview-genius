@@ -1,3 +1,4 @@
+
 import React, { createContext, useContext, useState, useReducer, useEffect } from 'react';
 import { toast } from 'sonner';
 import { generateInterviewQuestion, evaluateAnswer } from '@/utils/openaiService';
@@ -111,10 +112,6 @@ function interviewReducer(state: InterviewSession, action: Action): InterviewSes
 // Context type
 type InterviewContextType = {
   session: InterviewSession;
-  currentInterview?: {
-    role_type: string;
-    language: string;
-  };
   isActive: boolean;
   isSpeaking: boolean;
   isProcessing: boolean;
@@ -144,19 +141,9 @@ export const InterviewProvider: React.FC<{ children: React.ReactNode }> = ({ chi
   const [selectedRole, setSelectedRole] = useState<InterviewRole>('frontend');
   const [selectedLanguage, setSelectedLanguage] = useState<ProgrammingLanguage>('javascript');
   const [selectedCategory, setSelectedCategory] = useState<InterviewCategory>('algorithms');
-  const [currentInterview, setCurrentInterview] = useState({
-    role_type: selectedRole,
-    language: selectedLanguage
-  });
-
-  useEffect(() => {
-    setCurrentInterview({
-      role_type: selectedRole,
-      language: selectedLanguage
-    });
-  }, [selectedRole, selectedLanguage]);
 
   const startSession = async (options: Partial<InterviewSession>) => {
+    // Generate a unique ID for the session
     const sessionId = `session-${Date.now()}`;
     
     const sessionData = {
@@ -175,16 +162,17 @@ export const InterviewProvider: React.FC<{ children: React.ReactNode }> = ({ chi
     setIsActive(true);
     toast.success('Interview session started');
     
+    // Save session to Supabase
     await saveSessionToSupabase(sessionId, sessionData);
     
+    // Add initial assistant message
     setIsProcessing(true);
     try {
+      // Generate the initial question using OpenAI
       const initialQuestion = await generateInterviewQuestion(
         selectedRole,
         selectedCategory,
-        [],
-        options.resumeText,
-        options.customTopics
+        []
       );
       
       const welcomeMessage = `Hello! I'll be your technical interviewer today. We'll focus on ${selectedCategory} questions for a ${selectedRole} role using ${selectedLanguage}.\n\n${initialQuestion}`;
@@ -199,6 +187,7 @@ export const InterviewProvider: React.FC<{ children: React.ReactNode }> = ({ chi
         },
       });
       
+      // Save message to Supabase
       await saveMessageToSupabase(sessionId, messageId, {
         role: 'assistant',
         content: welcomeMessage
@@ -206,6 +195,7 @@ export const InterviewProvider: React.FC<{ children: React.ReactNode }> = ({ chi
     } catch (error) {
       console.error('Error starting interview:', error);
       
+      // Fallback question if OpenAI fails
       const fallbackMessage = `Hello! I'll be your technical interviewer today. We'll focus on ${selectedCategory} questions for a ${selectedRole} role using ${selectedLanguage}.\n\nLet's start with a common question: Can you explain how you approach problem-solving in your development work? Please walk me through your typical process from understanding requirements to implementation.`;
       
       const messageId = `msg-${Date.now()}`;
@@ -218,6 +208,7 @@ export const InterviewProvider: React.FC<{ children: React.ReactNode }> = ({ chi
         },
       });
       
+      // Save fallback message to Supabase
       await saveMessageToSupabase(sessionId, messageId, {
         role: 'assistant',
         content: fallbackMessage
@@ -274,6 +265,7 @@ export const InterviewProvider: React.FC<{ children: React.ReactNode }> = ({ chi
     toast.success('Interview session ended');
     
     try {
+      // Update session in Supabase to mark it as ended
       const { error } = await supabase
         .from('interview_sessions')
         .update({
@@ -292,6 +284,7 @@ export const InterviewProvider: React.FC<{ children: React.ReactNode }> = ({ chi
   };
 
   const sendMessage = async (content: string) => {
+    // Add user message
     const userMessageId = `msg-${Date.now()}`;
     
     dispatch({
@@ -302,6 +295,7 @@ export const InterviewProvider: React.FC<{ children: React.ReactNode }> = ({ chi
       },
     });
     
+    // Save user message to Supabase
     await saveMessageToSupabase(state.id, userMessageId, {
       role: 'user',
       content
@@ -310,18 +304,19 @@ export const InterviewProvider: React.FC<{ children: React.ReactNode }> = ({ chi
     setIsProcessing(true);
 
     try {
+      // Extract previous questions to avoid repetition
       const previousQuestions = state.messages
         .filter(msg => msg.role === 'assistant')
         .map(msg => msg.content);
       
+      // Generate AI response using OpenAI
       const aiResponse = await generateInterviewQuestion(
         state.role,
         state.category,
-        previousQuestions,
-        state.resumeText,
-        state.customTopics
+        previousQuestions
       );
       
+      // Add AI response
       const aiMessageId = `msg-${Date.now()}`;
       
       dispatch({
@@ -332,11 +327,13 @@ export const InterviewProvider: React.FC<{ children: React.ReactNode }> = ({ chi
         },
       });
       
+      // Save AI message to Supabase
       await saveMessageToSupabase(state.id, aiMessageId, {
         role: 'assistant',
         content: aiResponse
       });
       
+      // Update question count in Supabase
       const questionCount = state.messages.filter(m => m.role === 'user').length + 1;
       await supabase
         .from('interview_sessions')
@@ -350,6 +347,7 @@ export const InterviewProvider: React.FC<{ children: React.ReactNode }> = ({ chi
       console.error('Error getting AI response:', error);
       toast.error('Failed to get response from AI interviewer');
       
+      // Add a fallback response
       const fallbackResponses = [
         "That's an interesting approach. Let's move on to another aspect of this topic. Can you explain how you would handle error cases in a similar scenario?",
         "Thank you for that explanation. Now, I'd like to understand how you approach debugging complex issues in your codebase. Could you walk me through your process?",
@@ -369,6 +367,7 @@ export const InterviewProvider: React.FC<{ children: React.ReactNode }> = ({ chi
         },
       });
       
+      // Save fallback message to Supabase
       await saveMessageToSupabase(state.id, fallbackMessageId, {
         role: 'assistant',
         content: randomFallback
@@ -396,7 +395,6 @@ export const InterviewProvider: React.FC<{ children: React.ReactNode }> = ({ chi
     <InterviewContext.Provider
       value={{
         session: state,
-        currentInterview,
         isActive,
         isSpeaking,
         isProcessing,

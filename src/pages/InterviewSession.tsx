@@ -1,330 +1,443 @@
-
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useRef } from 'react';
 import { useParams, useNavigate } from 'react-router-dom';
-import { supabase } from '@/integrations/supabase/client';
 import { useAuth } from '@/context/AuthContext';
-import { toast } from 'sonner';
+import { supabase } from '@/integrations/supabase/client';
+import Navbar from '@/components/Navbar';
 import InterviewPanel from '@/components/InterviewPanel';
-import { analyzeAnswer } from '@/utils/interviewAnalysisService';
-import { getChatCompletion } from '@/utils/openaiService';
+import CodeEditor from '@/components/CodeEditor';
+import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs';
 import { Button } from '@/components/ui/button';
-import { ArrowLeft, Timer, XCircle } from 'lucide-react';
+import { Progress } from '@/components/ui/progress';
+import { Maximize, Minimize, ArrowLeft, Clock, CheckSquare } from 'lucide-react';
+import { toast } from 'sonner';
+import { generateInterviewQuestion } from '@/utils/openaiService';
 
 const InterviewSession = () => {
-  const { id } = useParams();
+  const { id } = useParams<{ id: string }>();
   const navigate = useNavigate();
   const { user } = useAuth();
-  const [session, setSession] = useState<any>(null);
+  const [loading, setLoading] = useState(true);
   const [messages, setMessages] = useState<any[]>([]);
-  const [isProcessing, setIsProcessing] = useState(false);
+  const [sessionData, setSessionData] = useState<any>(null);
   const [input, setInput] = useState('');
+  const [codeValue, setCodeValue] = useState('// Write your code here');
   const [isFullScreen, setIsFullScreen] = useState(false);
-  const [timeRemaining, setTimeRemaining] = useState<number | null>(null);
-  const [timerIntervalId, setTimerIntervalId] = useState<number | null>(null);
+  const [isProcessing, setIsProcessing] = useState(false);
+  const [activeTab, setActiveTab] = useState('chat');
+  const [timeRemaining, setTimeRemaining] = useState(0);
+  const [questionCount, setQuestionCount] = useState(0);
+  const timerRef = useRef<number | null>(null);
+  const [isCompleted, setIsCompleted] = useState(false);
 
   useEffect(() => {
-    if (id) {
-      loadSession();
-      loadMessages();
+    const fetchSessionData = async () => {
+      if (!id) return;
+      
+      try {
+        const { data, error } = await supabase
+          .from('interview_sessions')
+          .select('*')
+          .eq('id', id)
+          .eq('user_id', user?.id)
+          .single();
+        
+        if (error) throw error;
+        
+        if (!data) {
+          toast.error('Interview session not found');
+          navigate('/dashboard');
+          return;
+        }
+        
+        setSessionData(data);
+        
+        if (data.start_time) {
+          const startTime = new Date(data.start_time).getTime();
+          const duration = data.time_limit * 60 * 1000;
+          const now = Date.now();
+          const endTime = startTime + duration;
+          const remaining = Math.max(0, Math.floor((endTime - now) / 1000));
+          setTimeRemaining(remaining);
+        } else {
+          setTimeRemaining(data.time_limit * 60);
+        }
+        
+        setQuestionCount(data.current_question_count || 0);
+        
+        if (data.end_time) {
+          setIsCompleted(true);
+        }
+        
+        const { data: messagesData, error: messagesError } = await supabase
+          .from('interview_messages')
+          .select('*')
+          .eq('session_id', id)
+          .order('created_at', { ascending: true });
+        
+        if (messagesError) throw messagesError;
+        
+        if (messagesData.length > 0) {
+          setMessages(messagesData);
+        } else {
+          await generateFirstQuestion(data);
+        }
+      } catch (error: any) {
+        console.error('Error fetching interview session:', error);
+        toast.error(error.message || 'Failed to load interview session');
+        navigate('/dashboard');
+      } finally {
+        setLoading(false);
+      }
+    };
+    
+    fetchSessionData();
+    
+    return () => {
+      if (timerRef.current) {
+        window.clearInterval(timerRef.current);
+      }
+    };
+  }, [id, user, navigate]);
+  
+  useEffect(() => {
+    if (timeRemaining > 0 && !isCompleted) {
+      timerRef.current = window.setInterval(() => {
+        setTimeRemaining(prev => {
+          if (prev <= 1) {
+            endInterview();
+            clearInterval(timerRef.current!);
+            return 0;
+          }
+          return prev - 1;
+        });
+      }, 1000);
     }
     
     return () => {
-      // Clear timer on unmount
-      if (timerIntervalId) {
-        clearInterval(timerIntervalId);
+      if (timerRef.current) {
+        window.clearInterval(timerRef.current);
       }
     };
-  }, [id]);
+  }, [timeRemaining, isCompleted]);
 
-  const loadSession = async () => {
-    try {
-      const { data, error } = await supabase
-        .from('interview_sessions')
-        .select('*')
-        .eq('id', id)
-        .single();
-
-      if (error) throw error;
-      setSession(data);
-      
-      // Initialize timer if time_limit is set
-      if (data.time_limit) {
-        let remainingTime = data.time_limit * 60; // Convert to seconds
-        
-        // If there's a start_time, calculate time elapsed
-        if (data.start_time) {
-          const startTime = new Date(data.start_time).getTime();
-          const currentTime = new Date().getTime();
-          const elapsedSeconds = Math.floor((currentTime - startTime) / 1000);
-          remainingTime = Math.max(0, data.time_limit * 60 - elapsedSeconds);
-        }
-        
-        setTimeRemaining(remainingTime);
-        
-        // Start the countdown timer
-        const intervalId = window.setInterval(() => {
-          setTimeRemaining(prev => {
-            if (prev !== null && prev <= 1) {
-              clearInterval(intervalId);
-              endInterview();
-              return 0;
-            }
-            return prev !== null ? prev - 1 : null;
-          });
-        }, 1000);
-        
-        setTimerIntervalId(intervalId);
-      }
-
-    } catch (error) {
-      console.error('Error loading session:', error);
-      toast.error('Failed to load interview session');
-    }
-  };
-
-  const loadMessages = async () => {
-    try {
-      const { data, error } = await supabase
-        .from('interview_messages')
-        .select('*')
-        .eq('session_id', id)
-        .order('created_at', { ascending: true });
-
-      if (error) throw error;
-      
-      if (data.length === 0) {
-        // If no messages, create initial greeting
-        const welcomeMessage = {
-          id: `msg-${Date.now()}`,
-          is_bot: true,
-          content: `Hello! I'll be your interviewer today. Let's focus on ${session?.role_type} questions.`,
-          created_at: new Date().toISOString()
-        };
-        
-        await saveMessage(welcomeMessage);
-        setMessages([welcomeMessage]);
-        
-        // Generate first question
-        generateQuestion();
-      } else {
-        setMessages(data);
-      }
-
-    } catch (error) {
-      console.error('Error loading messages:', error);
-      toast.error('Failed to load interview messages');
-    }
-  };
-
-  const generateQuestion = async () => {
-    try {
-      const question = await getChatCompletion([
-        {
-          role: 'system',
-          content: `You are an AI interviewer for a ${session?.role_type} position. 
-          Generate a challenging technical question related to ${session?.category}.
-          Keep the question focused and direct.`
-        }
-      ]);
-
-      const questionMessage = {
-        id: `msg-${Date.now()}`,
-        is_bot: true,
-        content: question,
-        created_at: new Date().toISOString()
-      };
-
-      await saveMessage(questionMessage);
-      setMessages(prev => [...prev, questionMessage]);
-
-    } catch (error) {
-      console.error('Error generating question:', error);
-      toast.error('Failed to generate question');
-    }
-  };
-
-  const saveMessage = async (message: any) => {
-    try {
-      const { error } = await supabase
-        .from('interview_messages')
-        .insert({
-          ...message,
-          session_id: id
-        });
-
-      if (error) throw error;
-
-    } catch (error) {
-      console.error('Error saving message:', error);
-      toast.error('Failed to save message');
-    }
-  };
-
-  const handleSendMessage = async (content: string) => {
-    if (!content.trim() || isProcessing) return;
-
+  const generateFirstQuestion = async (sessionData: any) => {
     setIsProcessing(true);
     try {
-      // Save user message
-      const userMessage = {
-        id: `msg-${Date.now()}`,
-        is_bot: false,
-        content,
-        created_at: new Date().toISOString()
-      };
-      
-      await saveMessage(userMessage);
-      setMessages(prev => [...prev, userMessage]);
-      setInput('');
-
-      // Analyze user's answer
-      const analysis = await analyzeAnswer(
-        messages[messages.length - 1].content, 
-        content,
-        session?.role_type,
-        session?.category
+      const initialQuestion = await generateInterviewQuestion(
+        sessionData.role_type,
+        sessionData.category,
+        []
       );
-
-      // Generate AI response with feedback
-      const aiResponseText = await getChatCompletion([
-        {
-          role: 'system',
-          content: `You are an AI interviewer for a ${session?.role_type} position.
-          The candidate just answered a question. Here's the analysis of their answer:
-          ${JSON.stringify(analysis)}
-          
-          Provide constructive feedback and ask a follow-up question.`
-        },
-        {
-          role: 'user',
-          content: content
-        }
-      ]);
-
-      const aiMessage = {
-        id: `msg-${Date.now()}`,
-        is_bot: true,
-        content: aiResponseText,
-        created_at: new Date().toISOString()
-      };
-
-      await saveMessage(aiMessage);
-      setMessages(prev => [...prev, aiMessage]);
-
-      // Update session progress
-      const newQuestionCount = (session?.current_question_count || 0) + 1;
-      await supabase
-        .from('interview_sessions')
-        .update({ 
-          current_question_count: newQuestionCount,
-          updated_at: new Date().toISOString()
+      
+      const welcomeMessage = `Hello! I'll be your technical interviewer today. We'll focus on ${sessionData.category} questions for a ${sessionData.role_type} role using ${sessionData.language}.\n\n${initialQuestion}`;
+      
+      const { data, error } = await supabase
+        .from('interview_messages')
+        .insert({
+          session_id: id,
+          is_bot: true,
+          content: welcomeMessage,
         })
-        .eq('id', id);
-
-      // Check if we should end the interview
-      if (newQuestionCount >= (session?.questions_limit || 5)) {
-        await endInterview();
-      }
-
-    } catch (error) {
-      console.error('Error processing message:', error);
-      toast.error('Failed to process message');
+        .select();
+      
+      if (error) throw error;
+      
+      setMessages([data[0]]);
+      
+      await updateQuestionCount(1);
+      setQuestionCount(1);
+    } catch (error: any) {
+      console.error('Error generating first question:', error);
+      toast.error('Failed to generate interview question');
     } finally {
       setIsProcessing(false);
     }
   };
 
-  const endInterview = async () => {
+  const sendMessage = async (content: string) => {
+    if (!content.trim() || isProcessing) return;
+    
+    setIsProcessing(true);
     try {
-      // Clear timer if it exists
-      if (timerIntervalId) {
-        clearInterval(timerIntervalId);
-        setTimerIntervalId(null);
-      }
-
-      await supabase
-        .from('interview_sessions')
-        .update({ 
-          end_time: new Date().toISOString(),
-          updated_at: new Date().toISOString()
+      const { data: userMessage, error: userError } = await supabase
+        .from('interview_messages')
+        .insert({
+          session_id: id,
+          is_bot: false,
+          content,
         })
-        .eq('id', id);
-
-      // Add completion message
-      const completionMessage = {
-        id: `msg-${Date.now()}`,
-        is_bot: true,
-        content: "Thank you for completing the interview! I'll analyze your responses and provide detailed feedback.",
-        created_at: new Date().toISOString()
-      };
+        .select();
       
-      await saveMessage(completionMessage);
-      setMessages(prev => [...prev, completionMessage]);
+      if (userError) throw userError;
       
-      toast.success('Interview completed! Redirecting to results...');
+      setMessages(prev => [...prev, userMessage[0]]);
+      setInput('');
       
-      // Navigate to results
-      setTimeout(() => {
-        navigate(`/interview/results/${id}`);
-      }, 2000);
-
-    } catch (error) {
-      console.error('Error ending interview:', error);
-      toast.error('Failed to end interview');
+      const previousQuestions = messages
+        .filter(msg => msg.is_bot)
+        .map(msg => msg.content);
+      
+      if (questionCount >= sessionData.questions_limit) {
+        const { data: finalMessage, error: finalError } = await supabase
+          .from('interview_messages')
+          .insert({
+            session_id: id,
+            is_bot: true,
+            content: "You've reached the end of this interview session. Thank you for your participation. You can go back to review your answers or end the session now.",
+          })
+          .select();
+        
+        if (finalError) throw finalError;
+        
+        setMessages(prev => [...prev, finalMessage[0]]);
+        await endInterview();
+        return;
+      }
+      
+      const aiResponse = await generateInterviewQuestion(
+        sessionData.role_type,
+        sessionData.category,
+        previousQuestions
+      );
+      
+      const { data: botMessage, error: botError } = await supabase
+        .from('interview_messages')
+        .insert({
+          session_id: id,
+          is_bot: true,
+          content: aiResponse,
+        })
+        .select();
+      
+      if (botError) throw botError;
+      
+      setMessages(prev => [...prev, botMessage[0]]);
+      
+      await updateQuestionCount(questionCount + 1);
+      setQuestionCount(prev => prev + 1);
+    } catch (error: any) {
+      console.error('Error processing message:', error);
+      toast.error('Failed to get AI response');
+    } finally {
+      setIsProcessing(false);
     }
   };
 
-  const formatTime = (seconds: number): string => {
-    if (seconds === null) return '--:--';
-    const mins = Math.floor(seconds / 60);
-    const secs = seconds % 60;
-    return `${mins}:${secs.toString().padStart(2, '0')}`;
+  const updateQuestionCount = async (count: number) => {
+    try {
+      await supabase
+        .from('interview_sessions')
+        .update({ current_question_count: count })
+        .eq('id', id);
+    } catch (error) {
+      console.error('Error updating question count:', error);
+    }
+  };
+
+  const endInterview = async () => {
+    try {
+      await supabase
+        .from('interview_sessions')
+        .update({ end_time: new Date().toISOString() })
+        .eq('id', id);
+      
+      setIsCompleted(true);
+      
+      if (timerRef.current) {
+        window.clearInterval(timerRef.current);
+      }
+      
+      toast.success('Interview session completed');
+    } catch (error: any) {
+      console.error('Error ending interview:', error);
+      toast.error('Failed to end interview session');
+    }
+  };
+
+  const toggleFullScreen = () => {
+    setIsFullScreen(prev => !prev);
+  };
+
+  const formatTime = (seconds: number) => {
+    const minutes = Math.floor(seconds / 60);
+    const remainingSeconds = seconds % 60;
+    return `${minutes}:${remainingSeconds.toString().padStart(2, '0')}`;
+  };
+
+  const progressPercentage = () => {
+    if (!sessionData) return 0;
+    const maxQuestions = sessionData.questions_limit;
+    return Math.min(100, (questionCount / maxQuestions) * 100);
+  };
+
+  const timeProgressPercentage = () => {
+    if (!sessionData) return 0;
+    const totalSeconds = sessionData.time_limit * 60;
+    return Math.max(0, 100 - (timeRemaining / totalSeconds) * 100);
+  };
+
+  const handleCodeChange = (newCode: string) => {
+    setCodeValue(newCode);
+  };
+
+  if (loading) {
+    return (
+      <div className="flex h-screen w-full items-center justify-center">
+        <div className="h-10 w-10 animate-spin rounded-full border-4 border-primary border-t-transparent"></div>
+      </div>
+    );
+  }
+
+  const generateAIResponse = async (userInput: string) => {
+    try {
+      // Extract previous messages for context
+      const previousQuestions = messages
+        .filter(msg => msg.is_bot)
+        .map(msg => msg.content);
+      
+      // Add the new user message
+      if (questionCount >= sessionData.questions_limit) {
+        const { data: finalMessage, error: finalError } = await supabase
+          .from('interview_messages')
+          .insert({
+            session_id: id,
+            is_bot: true,
+            content: "You've reached the end of this interview session. Thank you for your participation. You can go back to review your answers or end the session now.",
+          })
+          .select();
+        
+        if (finalError) throw finalError;
+        
+        setMessages(prev => [...prev, finalMessage[0]]);
+        await endInterview();
+        return;
+      }
+      
+      const aiResponse = await generateInterviewQuestion(
+        sessionData.role_type,
+        sessionData.category,
+        previousQuestions
+      );
+      
+      const { data: botMessage, error: botError } = await supabase
+        .from('interview_messages')
+        .insert({
+          session_id: id,
+          is_bot: true,
+          content: aiResponse,
+        })
+        .select();
+      
+      if (botError) throw botError;
+      
+      setMessages(prev => [...prev, botMessage[0]]);
+      
+      await updateQuestionCount(questionCount + 1);
+      setQuestionCount(prev => prev + 1);
+    } catch (error: any) {
+      console.error('Error processing message:', error);
+      toast.error('Failed to get AI response');
+    }
   };
 
   return (
-    <div className="min-h-screen bg-background p-4">
-      <div className="max-w-6xl mx-auto">
-        <div className="flex justify-between items-center mb-4">
-          <Button variant="ghost" onClick={() => navigate('/dashboard')}>
-            <ArrowLeft className="mr-2 h-4 w-4" />
-            Back to Dashboard
-          </Button>
-          {session && (
-            <div className="flex items-center gap-4">
-              {timeRemaining !== null && (
-                <div className="flex items-center text-amber-500">
-                  <Timer className="mr-1 h-4 w-4" />
-                  <span className="text-sm font-mono">{formatTime(timeRemaining)}</span>
-                </div>
-              )}
-              <Button 
-                variant="destructive" 
-                size="sm" 
-                onClick={endInterview}
-                className="flex items-center gap-1"
-              >
-                <XCircle className="h-4 w-4" />
-                End Interview
+    <div className={`min-h-screen bg-background flex flex-col ${isFullScreen ? 'h-screen overflow-hidden' : ''}`}>
+      {!isFullScreen && <Navbar />}
+      
+      <main className={`flex-1 container ${isFullScreen ? 'max-w-none container-fluid p-0 h-full' : 'py-6 px-4'}`}>
+        {!isFullScreen && (
+          <div className="flex justify-between items-center mb-6">
+            <div className="flex items-center">
+              <Button variant="ghost" onClick={() => navigate('/dashboard')} className="mr-2">
+                <ArrowLeft className="h-4 w-4 mr-2" />
+                Back to Dashboard
               </Button>
-              <div className="text-right">
-                <h2 className="text-xl font-bold">{session.role_type} Interview</h2>
-                <p className="text-sm text-muted-foreground">{session.category}</p>
+            </div>
+            <div>
+              <h2 className="text-xl font-semibold">{sessionData?.role_type} Interview ({sessionData?.category})</h2>
+              <p className="text-sm text-muted-foreground">Language: {sessionData?.language}</p>
+            </div>
+            <div>
+              <Button variant="outline" onClick={toggleFullScreen}>
+                <Maximize className="h-4 w-4 mr-2" />
+                Fullscreen
+              </Button>
+            </div>
+          </div>
+        )}
+        
+        <div className={`${isFullScreen ? 'h-full' : 'h-[calc(100vh-200px)]'}`}>
+          <div className="flex flex-col h-full">
+            <div className="flex justify-between items-center mb-4 px-4">
+              <div className="flex items-center">
+                <Clock className="text-amber-500 mr-2 h-5 w-5" />
+                <div>
+                  <span className="text-sm font-medium mr-2">Time: {formatTime(timeRemaining)}</span>
+                  <Progress value={timeProgressPercentage()} className="w-40 h-2" />
+                </div>
+              </div>
+              <div className="flex items-center">
+                <CheckSquare className="text-green-500 mr-2 h-5 w-5" />
+                <div>
+                  <span className="text-sm font-medium mr-2">Questions: {questionCount}/{sessionData?.questions_limit}</span>
+                  <Progress value={progressPercentage()} className="w-40 h-2" />
+                </div>
+              </div>
+              <div>
+                {isCompleted ? (
+                  <Button variant="outline" onClick={() => navigate('/history')}>
+                    View Interview Results
+                  </Button>
+                ) : (
+                  <Button variant="outline" onClick={endInterview}>
+                    End Interview
+                  </Button>
+                )}
               </div>
             </div>
-          )}
+            
+            {sessionData?.is_coding_enabled ? (
+              <Tabs value={activeTab} onValueChange={setActiveTab} className="flex-1 flex flex-col">
+                <TabsList className="mx-4 mb-2">
+                  <TabsTrigger value="chat">Interview Chat</TabsTrigger>
+                  <TabsTrigger value="code">Code Editor</TabsTrigger>
+                </TabsList>
+                <TabsContent value="chat" className="flex-1 flex">
+                  <InterviewPanel
+                    isFullScreen={isFullScreen}
+                    toggleFullScreen={toggleFullScreen}
+                    messages={messages}
+                    onSendMessage={sendMessage}
+                    isProcessing={isProcessing}
+                    input={input}
+                    setInput={setInput}
+                    isCompleted={isCompleted}
+                  />
+                </TabsContent>
+                <TabsContent value="code" className="flex-1 flex">
+                  <CodeEditor
+                    language={sessionData?.language || 'javascript'}
+                    initialCode={codeValue}
+                    onChange={handleCodeChange}
+                    readOnly={isCompleted}
+                  />
+                </TabsContent>
+              </Tabs>
+            ) : (
+              <InterviewPanel
+                isFullScreen={isFullScreen}
+                toggleFullScreen={toggleFullScreen}
+                messages={messages}
+                onSendMessage={sendMessage}
+                isProcessing={isProcessing}
+                input={input}
+                setInput={setInput}
+                isCompleted={isCompleted}
+              />
+            )}
+          </div>
         </div>
-
-        <InterviewPanel
-          messages={messages}
-          onSendMessage={handleSendMessage}
-          isProcessing={isProcessing}
-          input={input}
-          setInput={setInput}
-          isFullScreen={isFullScreen}
-          toggleFullScreen={() => setIsFullScreen(!isFullScreen)}
-          sessionId={id}
-        />
-      </div>
+      </main>
     </div>
   );
 };

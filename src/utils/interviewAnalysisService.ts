@@ -1,103 +1,112 @@
 
-/**
- * Analyzes a user's answer to an interview question and provides feedback
- */
+import { toast } from 'sonner';
 
-export interface AnalysisMetrics {
+// Types for interview analysis
+export type AnalysisMetrics = {
   clarity: number;
   conciseness: number;
   depth: number;
   fluency: number;
   confidence: number;
   overall: number;
-}
+};
 
-export interface InterviewAnalysis {
+export type InterviewAnalysis = {
   metrics: AnalysisMetrics;
   strengths: string[];
   weaknesses: string[];
   recommendations: string[];
   summaryText: string;
-}
-
-export const analyzeAnswer = async (
-  question: string,
-  answer: string,
-  role: string,
-  technology: string
-): Promise<{ feedback: string; score?: number; insights?: string[] }> => {
-  try {
-    if (!answer || answer.trim().length < 10) {
-      return { 
-        feedback: "Your answer is too brief. Could you elaborate more on your experience and knowledge?",
-        score: 2,
-        insights: ["Answer too short", "Lacks detail"]
-      };
-    }
-    
-    const containsTechnology = answer.toLowerCase().includes(technology.toLowerCase());
-    
-    let feedback = '';
-    let score = 0;
-    let insights = [];
-    
-    if (containsTechnology) {
-      feedback = `That's a good starting point! I like that you mentioned ${technology}. Can you elaborate on a specific project where you've used these skills?`;
-      score = 7;
-      insights = ["Good technology mention", "Could provide more specific examples"];
-    } else {
-      feedback = `Thank you for your answer. It would be helpful if you could specifically mention your experience with ${technology} as it's crucial for this ${role} position. Could you share an example of a project where you've used ${technology}?`;
-      score = 5;
-      insights = ["Missing technology specifics", "Answer is too general"];
-    }
-    
-    return { feedback, score, insights };
-  } catch (error) {
-    console.error("Error analyzing answer:", error);
-    return {
-      feedback: "I'm having trouble analyzing your answer. Could you rephrase it or provide more details?",
-      score: 3,
-      insights: ["Error in analysis", "Need clarification"]
-    };
-  }
 };
 
-// This implementation generates analysis for the interview
-export const generateInterviewAnalysis = async (sessionId: string): Promise<InterviewAnalysis> => {
+// OpenAI API key (hardcoded for testing)
+const OPENAI_API_KEY = "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";
+
+/**
+ * Analyze the full interview session using GPT-4o-mini
+ */
+export async function analyzeInterviewSession(
+  questions: string[],
+  answers: string[],
+  role: string,
+  category: string
+): Promise<InterviewAnalysis> {
   try {
-    // In a real implementation, we would fetch the interview questions and answers
-    // from the database using the sessionId and analyze them
+    console.log('Analyzing interview session with OpenAI using hardcoded API key');
     
-    // For now, return a mock analysis
+    const systemPrompt = `You are an expert interview coach analyzing a technical interview for a ${role} position focusing on ${category}.
+    Evaluate the answers based on clarity, conciseness, depth of knowledge, fluency, and confidence.
+    Rate each metric on a scale of 1-10 and provide an overall score.
+    Identify specific strengths, weaknesses, and provide actionable recommendations.
+    
+    Format your response as a JSON object with the following structure:
+    {
+      "metrics": {
+        "clarity": number,
+        "conciseness": number,
+        "depth": number,
+        "fluency": number,
+        "confidence": number,
+        "overall": number
+      },
+      "strengths": string[],
+      "weaknesses": string[],
+      "recommendations": string[],
+      "summaryText": string
+    }`;
+
+    // Prepare interview QA pairs
+    let interviewContent = '';
+    for (let i = 0; i < Math.min(questions.length, answers.length); i++) {
+      interviewContent += `Question ${i + 1}: ${questions[i]}\nAnswer ${i + 1}: ${answers[i]}\n\n`;
+    }
+
+    // Make the API request
+    const response = await fetch('https://api.openai.com/v1/chat/completions', {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+        'Authorization': `Bearer ${OPENAI_API_KEY}`
+      },
+      body: JSON.stringify({
+        model: 'gpt-4o-mini',
+        messages: [
+          { role: 'system', content: systemPrompt },
+          { role: 'user', content: `Analyze this interview:\n\n${interviewContent}` }
+        ],
+        temperature: 0.5,
+        response_format: { type: "json_object" }
+      })
+    });
+
+    if (!response.ok) {
+      const errorData = await response.json();
+      console.error('OpenAI API error:', errorData);
+      throw new Error(`OpenAI API error: ${response.status} ${response.statusText}`);
+    }
+
+    const data = await response.json();
+    const analysisResult = JSON.parse(data.choices[0].message.content);
+
     return {
       metrics: {
-        clarity: 7,
-        conciseness: 6,
-        depth: 8,
-        fluency: 7,
-        confidence: 6,
-        overall: 7
+        clarity: analysisResult.metrics.clarity,
+        conciseness: analysisResult.metrics.conciseness,
+        depth: analysisResult.metrics.depth,
+        fluency: analysisResult.metrics.fluency,
+        confidence: analysisResult.metrics.confidence,
+        overall: analysisResult.metrics.overall
       },
-      strengths: [
-        "Demonstrated good technical knowledge",
-        "Clear communication of complex concepts",
-        "Provided specific examples from past experience"
-      ],
-      weaknesses: [
-        "Could improve on conciseness in some answers",
-        "Missed some opportunities to highlight leadership skills",
-        "Technical explanations sometimes overly complex"
-      ],
-      recommendations: [
-        "Practice more concise answers to common questions",
-        "Prepare specific examples that demonstrate leadership and teamwork",
-        "Study up on the latest trends in the specific technology mentioned"
-      ],
-      summaryText: "Overall, the interview showed strong technical aptitude and good communication skills. With some refinement in delivery and more strategic highlighting of strengths, future interviews could be even more effective."
+      strengths: analysisResult.strengths,
+      weaknesses: analysisResult.weaknesses,
+      recommendations: analysisResult.recommendations,
+      summaryText: analysisResult.summaryText
     };
   } catch (error) {
-    console.error("Error generating interview analysis:", error);
-    // Return a basic analysis even if there's an error
+    console.error('Error analyzing interview:', error);
+    toast.error('Failed to analyze interview. Please try again.');
+    
+    // Return default analysis if there's an error
     return {
       metrics: {
         clarity: 5,
@@ -107,10 +116,137 @@ export const generateInterviewAnalysis = async (sessionId: string): Promise<Inte
         confidence: 5,
         overall: 5
       },
-      strengths: ["Analysis unavailable due to technical issues"],
-      weaknesses: ["Analysis unavailable due to technical issues"],
-      recommendations: ["Try again later for a detailed analysis"],
-      summaryText: "We encountered an issue while analyzing your interview. Please try again later."
+      strengths: ['Good effort in completing the interview'],
+      weaknesses: ['Areas for improvement could not be determined'],
+      recommendations: ['Practice more interview questions', 'Review basic concepts', 'Try again with a new session'],
+      summaryText: 'The interview analysis couldn\'t be completed. We\'ve provided a standard evaluation.'
     };
   }
-};
+}
+
+/**
+ * Analyze a single answer
+ */
+export async function analyzeAnswer(
+  question: string,
+  answer: string,
+  role: string,
+  category: string
+): Promise<{
+  score: number;
+  feedback: string;
+  strengths: string[];
+  weaknesses: string[];
+}> {
+  try {
+    console.log('Analyzing answer with OpenAI using hardcoded API key');
+    
+    const response = await fetch('https://api.openai.com/v1/chat/completions', {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+        'Authorization': `Bearer ${OPENAI_API_KEY}`
+      },
+      body: JSON.stringify({
+        model: 'gpt-4o-mini',
+        messages: [
+          {
+            role: 'system',
+            content: `You are an expert interview coach. Evaluate this answer for a ${role} position interview on ${category}.
+            Rate it on a scale of 1-10 and provide specific strengths and areas for improvement.
+            Format your response as JSON with the following structure:
+            {
+              "score": number,
+              "feedback": string,
+              "strengths": string[],
+              "weaknesses": string[]
+            }`
+          },
+          {
+            role: 'user',
+            content: `Question: ${question}\n\nAnswer: ${answer}`
+          }
+        ],
+        temperature: 0.5,
+        response_format: { type: "json_object" }
+      })
+    });
+
+    if (!response.ok) {
+      throw new Error('Failed to analyze answer');
+    }
+
+    const data = await response.json();
+    return JSON.parse(data.choices[0].message.content);
+  } catch (error) {
+    console.error('Error analyzing answer:', error);
+    return {
+      score: 5,
+      feedback: 'We couldn\'t analyze this answer. Please try again.',
+      strengths: ['N/A'],
+      weaknesses: ['N/A']
+    };
+  }
+}
+
+/**
+ * Analyze text from PDF using OCR
+ */
+export async function analyzeInterviewDocument(
+  documentBase64: string
+): Promise<{
+  extractedText: string;
+  questions: string[];
+  answers: string[];
+}> {
+  try {
+    console.log('Analyzing interview document with OpenAI using hardcoded API key');
+    
+    const response = await fetch('https://api.openai.com/v1/chat/completions', {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+        'Authorization': `Bearer ${OPENAI_API_KEY}`
+      },
+      body: JSON.stringify({
+        model: 'gpt-4o',
+        messages: [
+          {
+            role: 'system',
+            content: 'You are an expert at extracting and analyzing interview Q&A content from documents. Extract all questions and answers, and format them clearly.'
+          },
+          {
+            role: 'user',
+            content: [
+              {
+                type: 'text',
+                text: 'Extract all interview questions and answers from this document. Format your response as JSON with "extractedText", "questions", and "answers" arrays.'
+              },
+              {
+                type: 'image_url',
+                image_url: {
+                  url: `data:application/pdf;base64,${documentBase64}`
+                }
+              }
+            ]
+          }
+        ],
+        response_format: { type: "json_object" }
+      })
+    });
+
+    if (!response.ok) {
+      throw new Error('Failed to analyze document');
+    }
+
+    const data = await response.json();
+    return JSON.parse(data.choices[0].message.content);
+  } catch (error) {
+    console.error('Error analyzing document:', error);
+    return {
+      extractedText: 'Failed to extract text from document',
+      questions: [],
+      answers: []
+    };
+  }
+}

@@ -1,6 +1,5 @@
 
 import { useState, useEffect, useRef } from 'react';
-import { EditorView } from 'codemirror';
 
 // This is a mock implementation until we add the actual CodeMirror library
 // In a real implementation, we would use the @codemirror/view, @codemirror/state, etc.
@@ -11,7 +10,6 @@ interface UseCodeMirrorProps {
   theme?: 'light' | 'dark';
   readOnly?: boolean;
   onSave?: (value: string) => void;
-  containerRef?: React.RefObject<HTMLDivElement>;
 }
 
 interface UseCodeMirrorReturn {
@@ -19,7 +17,6 @@ interface UseCodeMirrorReturn {
   setValue: (value: string) => void;
   containerRef: React.RefObject<HTMLDivElement>;
   isReady: boolean;
-  view: EditorView | null;
 }
 
 export const useCodeMirror = ({
@@ -28,13 +25,10 @@ export const useCodeMirror = ({
   theme = 'light',
   readOnly = false,
   onSave,
-  containerRef: externalContainerRef,
 }: UseCodeMirrorProps = {}): UseCodeMirrorReturn => {
   const [value, setValue] = useState(initialValue);
   const [isReady, setIsReady] = useState(false);
-  const internalContainerRef = useRef<HTMLDivElement>(null);
-  const containerRef = externalContainerRef || internalContainerRef;
-  const [view, setView] = useState<EditorView | null>(null);
+  const containerRef = useRef<HTMLDivElement>(null);
 
   useEffect(() => {
     // In a real implementation, we would initialize CodeMirror here
@@ -66,7 +60,6 @@ export const useCodeMirror = ({
     setValue,
     containerRef,
     isReady,
-    view,
   };
 };
 

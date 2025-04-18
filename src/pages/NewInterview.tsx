@@ -110,13 +110,21 @@ const NewInterview = () => {
 
     setIsLoading(true);
     try {
-      const sessionId = crypto.randomUUID();
-      
+      console.log("Creating interview session with:", {
+        user_id: user?.id,
+        role_type: roleType,
+        language,
+        category,
+        questions_type: questionsType,
+        time_limit: timeLimit,
+        questions_limit: questionsLimit,
+        is_coding_enabled: isCodingEnabled
+      });
+
       const { data, error } = await supabase
         .from('interview_sessions')
         .insert({
-          id: sessionId,
-          user_id: user?.id || '00000000-0000-0000-0000-000000000000',
+          user_id: user?.id,
           role_type: roleType,
           language: language,
           category: category,
@@ -125,22 +133,18 @@ const NewInterview = () => {
           questions_limit: questionsLimit,
           is_coding_enabled: isCodingEnabled,
           start_time: new Date().toISOString(),
-          created_at: new Date().toISOString(),
         })
         .select()
         .single();
 
       if (error) {
+        console.error("Supabase error:", error);
         throw error;
       }
 
+      console.log("Created session:", data);
       toast.success('Interview session created');
-    
-      if (data && data.id) {
-        navigate(`/interview/${data.id}`);
-      } else {
-        throw new Error('Failed to get interview session ID');
-      }
+      navigate(`/interview/${data.id}`);
     } catch (error: any) {
       console.error('Failed to create interview session:', error);
       toast.error(error.message || 'Failed to create interview session');

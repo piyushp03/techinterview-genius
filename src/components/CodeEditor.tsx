@@ -1,114 +1,67 @@
 
-import React, { useEffect, useRef, useState } from 'react';
-import { EditorView, basicSetup } from 'codemirror';
-import { javascript } from '@codemirror/lang-javascript';
-import { python } from '@codemirror/lang-python';
-import { java } from '@codemirror/lang-java';
-import { cpp } from '@codemirror/lang-cpp';
-import { EditorState } from '@codemirror/state';
-import { Card, CardContent } from '@/components/ui/card';
+import React, { useRef, useEffect, useState } from 'react';
+import { useCodeMirror } from '@/hooks/useCodeMirror';
+import { Light as SyntaxHighlighter } from 'react-syntax-highlighter';
+import { vs2015 } from 'react-syntax-highlighter/dist/esm/styles/hljs';
 
 interface CodeEditorProps {
-  language: string;
-  initialCode: string;
-  onChange: (code: string) => void;
+  language?: string;
   readOnly?: boolean;
+  initialCode?: string;
+  onChange?: (code: string) => void;
 }
 
 const CodeEditor: React.FC<CodeEditorProps> = ({
   language = 'javascript',
-  initialCode = '',
-  onChange,
   readOnly = false,
+  initialCode = '',
+  onChange
 }) => {
   const editorRef = useRef<HTMLDivElement>(null);
-  const editorViewRef = useRef<EditorView | null>(null);
-  const [currentLanguage, setCurrentLanguage] = useState(language);
-  const [currentCode, setCurrentCode] = useState(initialCode);
+  const [code, setCode] = useState(initialCode);
+  const [isEditing, setIsEditing] = useState(!readOnly);
+  
+  const { view: editorView } = useCodeMirror({
+    containerRef: editorRef,
+    initialDoc: initialCode,
+    onChange: (value) => {
+      setCode(value);
+      onChange?.(value);
+    },
+    readOnly: readOnly,
+    language
+  });
 
   useEffect(() => {
-    if (currentLanguage !== language) {
-      setCurrentLanguage(language);
-      if (editorViewRef.current) {
-        editorViewRef.current.destroy();
-        editorViewRef.current = null;
-      }
-    }
-  }, [language, currentLanguage]);
-
-  useEffect(() => {
-    if (initialCode !== currentCode) {
-      setCurrentCode(initialCode);
+    if (initialCode !== code && !isEditing) {
+      setCode(initialCode);
     }
   }, [initialCode]);
-
-  useEffect(() => {
-    if (editorRef.current && !editorViewRef.current) {
-      // Select the appropriate language extension
-      let langExtension;
-      switch (language) {
-        case 'python':
-          langExtension = python();
-          break;
-        case 'java':
-          langExtension = java();
-          break;
-        case 'cpp':
-          langExtension = cpp();
-          break;
-        case 'javascript':
-        default:
-          langExtension = javascript();
-          break;
-      }
-
-      // Create the editor state
-      const startState = EditorState.create({
-        doc: currentCode,
-        extensions: [
-          basicSetup,
-          langExtension,
-          EditorView.updateListener.of((update) => {
-            if (update.docChanged) {
-              const newCode = update.state.doc.toString();
-              setCurrentCode(newCode);
-              onChange(newCode);
-            }
-          }),
-          EditorView.theme({
-            "&": { height: "100%" },
-            ".cm-scroller": { overflow: "auto" },
-            ".cm-content, .cm-gutter": { minHeight: "100%" },
-            ".cm-gutters": { backgroundColor: "transparent", border: "none" },
-            ".cm-activeLineGutter": { backgroundColor: "rgba(0, 0, 0, 0.1)" },
-          }),
-          EditorView.editable.of(!readOnly),
-        ],
-      });
-
-      // Create the editor view
-      const view = new EditorView({
-        state: startState,
-        parent: editorRef.current,
-      });
-
-      editorViewRef.current = view;
-
-      return () => {
-        if (editorViewRef.current) {
-          editorViewRef.current.destroy();
-          editorViewRef.current = null;
-        }
-      };
-    }
-  }, [language, currentCode, editorRef.current, readOnly, onChange]);
-
+  
   return (
-    <Card className="w-full h-full border-0 overflow-hidden">
-      <CardContent className="p-0 h-full">
-        <div ref={editorRef} className="h-full overflow-auto" />
-      </CardContent>
-    </Card>
+    <div className="border rounded-md overflow-hidden">
+      {isEditing ? (
+        <div
+          ref={editorRef}
+          className="min-h-[200px] font-mono text-sm"
+          style={{ height: '100%' }}
+        />
+      ) : (
+        <SyntaxHighlighter
+          language={language}
+          style={vs2015}
+          customStyle={{
+            margin: 0,
+            padding: '1rem',
+            borderRadius: '0.375rem',
+            minHeight: '200px',
+            overflowX: 'auto'
+          }}
+        >
+          {code}
+        </SyntaxHighlighter>
+      )}
+    </div>
   );
 };
 

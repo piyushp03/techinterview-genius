@@ -1,4 +1,3 @@
-
 import { useState, useEffect } from 'react';
 import { useAuth } from '@/context/AuthContext';
 import { supabase } from '@/integrations/supabase/client';
@@ -11,16 +10,11 @@ import { Avatar, AvatarFallback, AvatarImage } from '@/components/ui/avatar';
 import { User, Save, RefreshCw, LogOut } from 'lucide-react';
 import { toast } from 'sonner';
 
-interface ProfileData {
-  name?: string;
-  avatar_url?: string;
-}
-
 const Profile = () => {
   const { user, logout } = useAuth();
   const [loading, setLoading] = useState(true);
   const [updating, setUpdating] = useState(false);
-  const [profile, setProfile] = useState<ProfileData | null>(null);
+  const [profile, setProfile] = useState<any>(null);
   const [name, setName] = useState('');
   const [avatarUrl, setAvatarUrl] = useState('');
 
@@ -32,10 +26,10 @@ const Profile = () => {
     if (!user) return;
     
     try {
-      // Use the "users" table which exists instead of "profiles"
+      // Fixed: Use "profiles" as a string argument 
       const { data, error } = await supabase
-        .from('users')
-        .select('name, avatar_url')
+        .from('profiles')
+        .select('*')
         .eq('id', user.id)
         .single();
       
@@ -57,9 +51,9 @@ const Profile = () => {
     
     setUpdating(true);
     try {
-      // Update the "users" table instead of "profiles"
+      // Fixed: Use "profiles" as a string argument
       const { error } = await supabase
-        .from('users')
+        .from('profiles')
         .update({
           name,
           avatar_url: avatarUrl,
@@ -79,7 +73,7 @@ const Profile = () => {
     }
   };
 
-  const getInitials = (name: string = '') => {
+  const getInitials = (name: string) => {
     return name
       ?.split(' ')
       .map(n => n[0])

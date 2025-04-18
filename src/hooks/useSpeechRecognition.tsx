@@ -82,22 +82,14 @@ export const useSpeechRecognition = ({
       return;
     }
 
-    try {
-      recognitionRef.current = new SpeechRecognitionAPI() as SpeechRecognitionType;
-      recognitionRef.current.continuous = continuous;
-      recognitionRef.current.interimResults = interimResults;
-      recognitionRef.current.lang = lang;
-    } catch (error) {
-      console.error('Error initializing speech recognition:', error);
-    }
+    recognitionRef.current = new SpeechRecognitionAPI() as SpeechRecognitionType;
+    recognitionRef.current.continuous = continuous;
+    recognitionRef.current.interimResults = interimResults;
+    recognitionRef.current.lang = lang;
 
     return () => {
       if (recognitionRef.current) {
-        try {
-          recognitionRef.current.abort();
-        } catch (error) {
-          console.error('Error aborting speech recognition:', error);
-        }
+        recognitionRef.current.abort();
       }
     };
   }, [browserSupportsSpeechRecognition, continuous, interimResults, lang]);
@@ -110,48 +102,39 @@ export const useSpeechRecognition = ({
 
     setTranscript('');
 
-    try {
-      recognitionRef.current.onresult = (event: SpeechRecognitionEvent) => {
-        let currentTranscript = '';
-        for (let i = event.resultIndex; i < event.results.length; i++) {
-          const result = event.results[i];
-          currentTranscript += result[0].transcript;
-        }
-        
-        setTranscript(currentTranscript);
-        
-        if (onResult) {
-          onResult(currentTranscript);
-        }
-      };
+    recognitionRef.current.onresult = (event: SpeechRecognitionEvent) => {
+      let currentTranscript = '';
+      for (let i = event.resultIndex; i < event.results.length; i++) {
+        const result = event.results[i];
+        currentTranscript += result[0].transcript;
+      }
+      
+      setTranscript(currentTranscript);
+      
+      if (onResult) {
+        onResult(currentTranscript);
+      }
+    };
 
-      recognitionRef.current.onerror = (event: SpeechRecognitionErrorEvent) => {
-        console.error('Speech recognition error', event.error, event.message);
-      };
+    recognitionRef.current.onerror = (event: SpeechRecognitionErrorEvent) => {
+      console.error('Speech recognition error', event.error, event.message);
+    };
 
-      recognitionRef.current.onend = () => {
-        setListening(false);
-        if (onEnd) {
-          onEnd();
-        }
-      };
-
-      recognitionRef.current.start();
-      setListening(true);
-    } catch (error) {
-      console.error('Error starting speech recognition:', error);
+    recognitionRef.current.onend = () => {
       setListening(false);
-    }
+      if (onEnd) {
+        onEnd();
+      }
+    };
+
+    recognitionRef.current.start();
+    setListening(true);
   }, [browserSupportsSpeechRecognition, onResult, onEnd]);
 
   const stopListening = useCallback(() => {
     if (recognitionRef.current) {
-      try {
-        recognitionRef.current.stop();
-        setListening(false);
-      } catch (error) {
-        console.error('Error stopping speech recognition:', error);
-      }
+      recognitionRef.current.stop();
+      setListening(false);
     }
   }, []);
 
