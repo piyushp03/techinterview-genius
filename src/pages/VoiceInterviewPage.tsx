@@ -52,12 +52,18 @@ declare global {
   }
 }
 
+// Define message type to ensure strict typing
+interface InterviewMessage {
+  role: 'user' | 'assistant';
+  content: string;
+}
+
 const VoiceInterviewPage = () => {
   const { user } = useAuth();
   const navigate = useNavigate();
   const [isRecording, setIsRecording] = useState(false);
   const [transcript, setTranscript] = useState('');
-  const [messages, setMessages] = useState<Array<{role: 'user' | 'assistant', content: string}>>([]);
+  const [messages, setMessages] = useState<InterviewMessage[]>([]);
   const [isProcessing, setIsProcessing] = useState(false);
   const [sessionId, setSessionId] = useState<string | null>(null);
   const [currentQuestionCount, setCurrentQuestionCount] = useState(0);
@@ -143,15 +149,23 @@ const VoiceInterviewPage = () => {
     try {
       setIsProcessing(true);
       
+      if (!user) {
+        toast.error("You need to be logged in to start an interview");
+        return;
+      }
+      
       // Create a new interview session
       const newSessionId = uuidv4();
       const now = new Date().toISOString();
+      
+      // Build the user_id value that will work reliably
+      const userId = user.id;
       
       const { error } = await supabase
         .from('interview_sessions')
         .insert({
           id: newSessionId,
-          user_id: user?.id,
+          user_id: userId,
           role_type: role,
           category,
           language: 'english',
@@ -161,7 +175,11 @@ const VoiceInterviewPage = () => {
           time_limit: timeLimit,
         });
       
-      if (error) throw error;
+      if (error) {
+        console.error("Error creating interview session:", error);
+        toast.error("Failed to create interview session: " + error.message);
+        throw error;
+      }
       
       setSessionId(newSessionId);
       setStartTime(now);
@@ -170,17 +188,25 @@ const VoiceInterviewPage = () => {
       // Add initial AI message
       const initialPrompt = `You are an AI interviewer conducting a voice interview for a ${role} position. Ask me technical questions one at a time. Wait for my response before asking the next question. Start by introducing yourself briefly and ask your first question.`;
       
-      const initialResponse = await fetchAIResponse([{ role: 'user', content: initialPrompt }]);
+      const initialResponse = await fetchAIResponse([
+        { 
+          role: 'user' as const, 
+          content: initialPrompt 
+        }
+      ]);
       
       setMessages([
-        { role: 'assistant', content: initialResponse }
+        { 
+          role: 'assistant' as const, 
+          content: initialResponse 
+        }
       ]);
       
       setCurrentQuestionCount(1);
       
     } catch (error: any) {
       console.error('Error starting interview:', error);
-      toast.error('Failed to start interview');
+      toast.error('Failed to start interview: ' + error.message);
     } finally {
       setIsProcessing(false);
     }
@@ -201,15 +227,29 @@ const VoiceInterviewPage = () => {
       // Generate final feedback
       const feedbackPrompt = "Please provide comprehensive feedback on my interview performance. Highlight strengths, areas for improvement, and give specific advice on how I can better prepare for future interviews.";
       
-      const newMessages = [...messages, { role: 'user', content: feedbackPrompt }];
+      const newMessages = [
+        ...messages, 
+        { 
+          role: 'user' as const, 
+          content: feedbackPrompt 
+        }
+      ];
+      
       const feedbackResponse = await fetchAIResponse(newMessages);
       
-      setMessages([...newMessages, { role: 'assistant', content: feedbackResponse }]);
+      setMessages([
+        ...newMessages, 
+        { 
+          role: 'assistant' as const, 
+          content: feedbackResponse 
+        }
+      ]);
+      
       setIsInterviewEnded(true);
       
     } catch (error: any) {
       console.error('Error ending interview:', error);
-      toast.error('Failed to end interview');
+      toast.error('Failed to end interview: ' + error.message);
     } finally {
       setIsProcessing(false);
     }
@@ -248,7 +288,11 @@ const VoiceInterviewPage = () => {
       setIsProcessing(true);
       
       // Add user message
-      const userMessage = { role: 'user', content: transcript };
+      const userMessage: InterviewMessage = { 
+        role: 'user', 
+        content: transcript 
+      };
+      
       const updatedMessages = [...messages, userMessage];
       setMessages(updatedMessages);
       setTranscript('');
@@ -257,7 +301,13 @@ const VoiceInterviewPage = () => {
       const aiResponse = await fetchAIResponse(updatedMessages);
       
       // Add AI message
-      setMessages([...updatedMessages, { role: 'assistant', content: aiResponse }]);
+      setMessages([
+        ...updatedMessages, 
+        { 
+          role: 'assistant', 
+          content: aiResponse 
+        }
+      ]);
       
       // Update question count
       const newQuestionCount = currentQuestionCount + 1;
@@ -265,20 +315,30 @@ const VoiceInterviewPage = () => {
       
       // Save message to database
       if (sessionId) {
-        await supabase
-          .from('interview_messages')
-          .insert([
-            {
-              session_id: sessionId,
-              content: transcript,
-              is_bot: false,
-            },
-            {
-              session_id: sessionId,
-              content: aiResponse,
-              is_bot: true,
-            }
-          ]);
+        try {
+          const { error } = await supabase
+            .from('interview_messages')
+            .insert([
+              {
+                session_id: sessionId,
+                content: transcript,
+                is_bot: false,
+              },
+              {
+                session_id: sessionId,
+                content: aiResponse,
+                is_bot: true,
+              }
+            ]);
+            
+          if (error) {
+            console.error("Error saving messages:", error);
+            toast.error("Couldn't save your message to database");
+          }
+        } catch (err) {
+          console.error("Failed to save messages:", err);
+          toast.error("Couldn't save your message");
+        }
       }
       
       // Check if we've reached the question limit
@@ -289,13 +349,13 @@ const VoiceInterviewPage = () => {
       
     } catch (error: any) {
       console.error('Error sending message:', error);
-      toast.error('Failed to send message');
+      toast.error('Failed to send message: ' + error.message);
     } finally {
       setIsProcessing(false);
     }
   };
 
-  const fetchAIResponse = async (messageHistory: { role: string; content: string }[]) => {
+  const fetchAIResponse = async (messageHistory: InterviewMessage[]) => {
     try {
       // This would be replaced with your actual AI API call
       // For now, we'll simulate a response
@@ -319,6 +379,15 @@ const VoiceInterviewPage = () => {
     } catch (error) {
       console.error('Error fetching AI response:', error);
       return "I'm sorry, I couldn't process that. Could you try again?";
+    }
+  };
+
+  const handleKeyDown = (e: React.KeyboardEvent) => {
+    if (e.key === 'Enter' && !e.shiftKey) {
+      e.preventDefault();
+      if (transcript.trim()) {
+        sendMessage();
+      }
     }
   };
 
@@ -393,6 +462,7 @@ const VoiceInterviewPage = () => {
                         placeholder="Your response will appear here as you speak..."
                         value={transcript}
                         onChange={(e) => setTranscript(e.target.value)}
+                        onKeyDown={handleKeyDown}
                         disabled={isProcessing}
                       />
                       <div className="absolute bottom-2 right-2 flex gap-2">

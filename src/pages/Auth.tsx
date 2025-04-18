@@ -7,7 +7,9 @@ import { Input } from '@/components/ui/input';
 import { Card, CardContent, CardDescription, CardFooter, CardHeader, CardTitle } from '@/components/ui/card';
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs';
 import { Label } from '@/components/ui/label';
-import { CheckCircle, Mail } from 'lucide-react';
+import { CheckCircle, Mail, Info } from 'lucide-react';
+import { toast } from 'sonner';
+import { Alert, AlertDescription } from '@/components/ui/alert';
 
 const Auth = () => {
   const { login, register, loginAsGuest, isLoading } = useAuth();
@@ -32,6 +34,8 @@ const Auth = () => {
     e.preventDefault();
     try {
       await login(email, password);
+      toast.success("Logged in successfully!");
+      navigate('/');
     } catch (error) {
       console.error('Login error:', error);
     }
@@ -41,6 +45,7 @@ const Auth = () => {
     e.preventDefault();
     try {
       await register(name, email, password);
+      toast.success("Registration successful! Check your email to verify your account.");
     } catch (error) {
       console.error('Registration error:', error);
     }
@@ -48,11 +53,18 @@ const Auth = () => {
 
   const handleGuestLogin = async () => {
     try {
-      loginAsGuest();
+      await loginAsGuest();
+      toast.success("Logged in as guest");
+      navigate('/');
     } catch (error) {
       console.error('Guest login error:', error);
     }
   };
+
+  const passwordRequirements = [
+    "At least 6 characters long",
+    "Contains letters and numbers",
+  ];
 
   if (pendingConfirmation) {
     return (
@@ -188,6 +200,18 @@ const Auth = () => {
                       onChange={(e) => setPassword(e.target.value)}
                       required
                     />
+                    
+                    <Alert variant="outline" className="mt-2 py-2">
+                      <Info className="h-4 w-4" />
+                      <AlertDescription>
+                        <p className="text-xs font-medium mb-1">Password requirements:</p>
+                        <ul className="text-xs list-disc pl-5 space-y-1">
+                          {passwordRequirements.map((req, index) => (
+                            <li key={index}>{req}</li>
+                          ))}
+                        </ul>
+                      </AlertDescription>
+                    </Alert>
                   </div>
                   <Button type="submit" className="w-full" disabled={isLoading}>
                     {isLoading ? 'Creating account...' : 'Create Account'}
@@ -209,7 +233,7 @@ const Auth = () => {
                 </div>
               </div>
               <Button variant="outline" className="w-full" onClick={handleGuestLogin}>
-                Continue as Guest
+                {isLoading ? 'Signing in...' : 'Continue as Guest'}
               </Button>
               <div className="text-center text-sm text-muted-foreground">
                 <Button

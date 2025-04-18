@@ -9,7 +9,7 @@ import { Card, CardContent, CardDescription, CardFooter, CardHeader, CardTitle }
 import { Badge } from '@/components/ui/badge';
 import { History as HistoryIcon, Calendar, ChevronRight, Trash2, Clock, CheckCircle, BarChart } from 'lucide-react';
 import { toast } from 'sonner';
-import { format } from 'date-fns';
+import { format, formatDistanceToNow } from 'date-fns';
 import { Progress } from '@/components/ui/progress';
 import { AlertDialog, AlertDialogAction, AlertDialogCancel, AlertDialogContent, AlertDialogDescription, AlertDialogFooter, AlertDialogHeader, AlertDialogTitle, AlertDialogTrigger } from '@/components/ui/alert-dialog';
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogDescription } from '@/components/ui/dialog';
@@ -21,13 +21,25 @@ const History = () => {
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
   const [isErrorDialogOpen, setIsErrorDialogOpen] = useState(false);
+  const [selectedSession, setSelectedSession] = useState<any>(null);
+  const [sessionMessages, setSessionMessages] = useState<any[]>([]);
+  const [loadingMessages, setLoadingMessages] = useState(false);
+  const [isViewDialogOpen, setIsViewDialogOpen] = useState(false);
 
   useEffect(() => {
-    fetchSessions();
+    if (user) {
+      fetchSessions();
+    } else {
+      setLoading(false);
+    }
   }, [user]);
 
   const fetchSessions = async () => {
-    if (!user) return;
+    if (!user) {
+      toast.error("Please log in to view your interview history");
+      navigate("/auth");
+      return;
+    }
     
     try {
       setLoading(true);
@@ -77,6 +89,36 @@ const History = () => {
     }
   };
 
+  const fetchSessionMessages = async (sessionId: string) => {
+    if (!sessionId) return;
+    
+    try {
+      setLoadingMessages(true);
+      
+      const { data, error } = await supabase
+        .from('interview_messages')
+        .select('*')
+        .eq('session_id', sessionId)
+        .order('created_at', { ascending: true });
+      
+      if (error) throw error;
+      
+      setSessionMessages(data || []);
+    } catch (error: any) {
+      console.error('Error fetching session messages:', error);
+      toast.error('Failed to load interview messages');
+      setSessionMessages([]);
+    } finally {
+      setLoadingMessages(false);
+    }
+  };
+
+  const handleViewSession = async (session: any) => {
+    setSelectedSession(session);
+    await fetchSessionMessages(session.id);
+    setIsViewDialogOpen(true);
+  };
+
   const handleDeleteSession = async (id: string) => {
     try {
       // First, delete related messages
@@ -123,6 +165,7 @@ const History = () => {
       'fullstack': 'bg-amber-100 text-amber-800',
       'voice-interview': 'bg-pink-100 text-pink-800',
       'general': 'bg-slate-100 text-slate-800',
+      'Technical': 'bg-cyan-100 text-cyan-800',
     };
     
     return categories[category] || 'bg-gray-100 text-gray-800';
@@ -134,7 +177,7 @@ const History = () => {
         status: 'Completed',
         icon: <CheckCircle className="h-4 w-4 text-green-500" />,
         buttonText: 'View Results',
-        action: () => navigate(`/interview/results/${session.id}`),
+        action: () => handleViewSession(session),
       };
     } else if (session.start_time) {
       return {
@@ -159,6 +202,30 @@ const History = () => {
     }
     return Math.min(100, (session.current_question_count / session.questions_limit) * 100);
   };
+
+  // Check if user is logged in
+  if (!user && !loading) {
+    return (
+      <div className="min-h-screen bg-background flex flex-col">
+        <Navbar />
+        <main className="flex-1 container py-8 px-4 md:px-6 flex flex-col items-center justify-center">
+          <Card className="w-full max-w-md">
+            <CardHeader>
+              <CardTitle>Authentication Required</CardTitle>
+              <CardDescription>
+                Please log in to view your interview history
+              </CardDescription>
+            </CardHeader>
+            <CardFooter>
+              <Button onClick={() => navigate('/auth')} className="w-full">
+                Go to Login
+              </Button>
+            </CardFooter>
+          </Card>
+        </main>
+      </div>
+    );
+  }
 
   return (
     <div className="min-h-screen bg-background flex flex-col">
@@ -201,14 +268,14 @@ const History = () => {
                     </div>
                     <CardDescription className="flex items-center gap-1">
                       <Calendar className="h-3 w-3" />
-                      {format(new Date(session.created_at), 'PPP')}
+                      {session.created_at ? format(new Date(session.created_at), 'PPP') : 'Unknown date'}
                     </CardDescription>
                   </CardHeader>
                   <CardContent>
                     <div className="space-y-4">
                       <div className="flex items-center justify-between">
                         <span className="text-sm font-medium">Language:</span>
-                        <span className="text-sm">{session.language}</span>
+                        <span className="text-sm">{session.language || 'N/A'}</span>
                       </div>
                       
                       <div className="space-y-1">
@@ -287,6 +354,61 @@ const History = () => {
           <div className="flex justify-end">
             <Button onClick={() => setIsErrorDialogOpen(false)}>
               Dismiss
+            </Button>
+          </div>
+        </DialogContent>
+      </Dialog>
+      
+      <Dialog open={isViewDialogOpen} onOpenChange={setIsViewDialogOpen}>
+        <DialogContent className="max-w-3xl max-h-[80vh] overflow-hidden flex flex-col">
+          <DialogHeader>
+            <DialogTitle>
+              {selectedSession?.role_type} Interview
+              {selectedSession?.created_at && (
+                <span className="block text-sm font-normal text-muted-foreground mt-1">
+                  {format(new Date(selectedSession.created_at), 'PPP')}
+                </span>
+              )}
+            </DialogTitle>
+          </DialogHeader>
+          
+          <div className="flex-1 overflow-y-auto mt-4 py-2">
+            {loadingMessages ? (
+              <div className="flex justify-center py-10">
+                <div className="h-8 w-8 animate-spin rounded-full border-4 border-primary border-t-transparent"></div>
+              </div>
+            ) : sessionMessages.length === 0 ? (
+              <p className="text-muted-foreground text-center py-10">
+                No messages found for this interview session.
+              </p>
+            ) : (
+              <div className="space-y-4 px-2">
+                {sessionMessages.map((message) => (
+                  <div 
+                    key={message.id}
+                    className={`flex ${message.is_bot ? 'justify-start' : 'justify-end'}`}
+                  >
+                    <div 
+                      className={`max-w-[80%] rounded-lg p-3 ${
+                        message.is_bot ? 'bg-muted' : 'bg-primary text-primary-foreground'
+                      }`}
+                    >
+                      <div className="mb-1">
+                        {message.content}
+                      </div>
+                      <div className="text-xs opacity-70 text-right">
+                        {message.created_at && formatDistanceToNow(new Date(message.created_at), { addSuffix: true })}
+                      </div>
+                    </div>
+                  </div>
+                ))}
+              </div>
+            )}
+          </div>
+          
+          <div className="pt-4 flex justify-end">
+            <Button onClick={() => setIsViewDialogOpen(false)}>
+              Close
             </Button>
           </div>
         </DialogContent>
