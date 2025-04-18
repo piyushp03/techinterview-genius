@@ -15,7 +15,7 @@ interface Table {
 }
 
 export const setupDatabase = async () => {
-  // Remove the information_schema query as it's not needed and causing issues
+  // Simplified function that just logs a message instead of querying information_schema
   console.log('Database setup completed');
   return true;
 };
