@@ -1,448 +1,446 @@
-import React, { createContext, useContext, useState, useReducer, useEffect } from 'react';
+
+import React, { createContext, useState, useContext, ReactNode, useEffect } from 'react';
+import { supabase } from '@/integrations/supabase/client';
+import { useAuth } from './AuthContext';
 import { toast } from 'sonner';
 import { generateInterviewQuestion, evaluateAnswer } from '@/utils/openaiService';
-import { supabase } from '@/integrations/supabase/client';
 
-// Type definitions
-export type InterviewRole = 'frontend' | 'backend' | 'fullstack' | 'devops' | 'data' | 'mobile';
-export type ProgrammingLanguage = 'javascript' | 'typescript' | 'python' | 'java' | 'csharp' | 'cpp' | 'go' | 'ruby' | 'rust' | 'php';
-export type InterviewCategory = 'algorithms' | 'system-design' | 'behavioral' | 'language-specific';
-
-export type InterviewMessage = {
-  id: string;
-  role: 'user' | 'assistant';
-  content: string;
-  timestamp: Date;
-};
-
-export type InterviewSession = {
-  id: string;
-  role: InterviewRole;
-  language: ProgrammingLanguage;
-  category: InterviewCategory;
-  startTime: Date;
-  endTime?: Date;
-  messages: InterviewMessage[];
-  resumeText?: string;
-  customTopics?: string[];
-};
-
-// Initial state
-const initialState: InterviewSession = {
-  id: '',
-  role: 'frontend',
-  language: 'javascript',
-  category: 'algorithms',
-  startTime: new Date(),
-  messages: [],
-};
-
-// Action types
-type Action =
-  | { type: 'START_SESSION'; payload: Partial<InterviewSession> }
-  | { type: 'END_SESSION' }
-  | { type: 'ADD_MESSAGE'; payload: Omit<InterviewMessage, 'id' | 'timestamp'> }
-  | { type: 'UPDATE_SETTINGS'; payload: Partial<InterviewSession> }
-  | { type: 'SET_RESUME'; payload: string }
-  | { type: 'SET_CUSTOM_TOPICS'; payload: string[] }
-  | { type: 'RESET' };
-
-// Reducer function
-function interviewReducer(state: InterviewSession, action: Action): InterviewSession {
-  switch (action.type) {
-    case 'START_SESSION':
-      return {
-        ...state,
-        id: `session-${Date.now()}`,
-        startTime: new Date(),
-        messages: [],
-        ...action.payload,
-      };
-    
-    case 'END_SESSION':
-      return {
-        ...state,
-        endTime: new Date(),
-      };
-    
-    case 'ADD_MESSAGE':
-      return {
-        ...state,
-        messages: [
-          ...state.messages,
-          {
-            id: `msg-${Date.now()}`,
-            timestamp: new Date(),
-            ...action.payload,
-          },
-        ],
-      };
-    
-    case 'UPDATE_SETTINGS':
-      return {
-        ...state,
-        ...action.payload,
-      };
-    
-    case 'SET_RESUME':
-      return {
-        ...state,
-        resumeText: action.payload,
-      };
-    
-    case 'SET_CUSTOM_TOPICS':
-      return {
-        ...state,
-        customTopics: action.payload,
-      };
-    
-    case 'RESET':
-      return {
-        ...initialState,
-        id: '',
-        startTime: new Date(),
-      };
-    
-    default:
-      return state;
-  }
+interface InterviewContextType {
+  createInterview: (data: any) => Promise<string>;
+  startInterview: (id: string) => Promise<void>;
+  endInterview: (id: string) => Promise<void>;
+  submitAnswer: (id: string, answer: string, previousQuestions: string[]) => Promise<any>;
+  fetchInterview: (id: string) => Promise<any>;
+  fetchInterviews: () => Promise<any[]>;
+  fetchResults: (id: string) => Promise<any>;
+  deleteInterview: (id: string) => Promise<void>;
+  isLoading: boolean;
 }
 
-// Context type
-type InterviewContextType = {
-  session: InterviewSession;
-  isActive: boolean;
-  isSpeaking: boolean;
-  isProcessing: boolean;
-  selectedRole: InterviewRole;
-  selectedLanguage: ProgrammingLanguage;
-  selectedCategory: InterviewCategory;
-  startSession: (options: Partial<InterviewSession>) => void;
-  endSession: () => void;
-  sendMessage: (content: string) => Promise<void>;
-  setRole: (role: InterviewRole) => void;
-  setLanguage: (language: ProgrammingLanguage) => void;
-  setCategory: (category: InterviewCategory) => void;
-  processResume: (text: string) => void;
-  setCustomTopics: (topics: string[]) => void;
-  toggleSpeaking: () => void;
-};
-
-// Create context
 const InterviewContext = createContext<InterviewContextType | undefined>(undefined);
 
-// Context provider
-export const InterviewProvider: React.FC<{ children: React.ReactNode }> = ({ children }) => {
-  const [state, dispatch] = useReducer(interviewReducer, initialState);
-  const [isActive, setIsActive] = useState(false);
-  const [isSpeaking, setIsSpeaking] = useState(false);
-  const [isProcessing, setIsProcessing] = useState(false);
-  const [selectedRole, setSelectedRole] = useState<InterviewRole>('frontend');
-  const [selectedLanguage, setSelectedLanguage] = useState<ProgrammingLanguage>('javascript');
-  const [selectedCategory, setSelectedCategory] = useState<InterviewCategory>('algorithms');
+export const InterviewProvider: React.FC<{ children: ReactNode }> = ({ children }) => {
+  const { user, isAuthenticated } = useAuth();
+  const [isLoading, setIsLoading] = useState(false);
 
-  const startSession = async (options: Partial<InterviewSession>) => {
-    const sessionId = `session-${Date.now()}`;
-    
-    const sessionData = {
-      role: selectedRole,
-      language: selectedLanguage,
-      category: selectedCategory,
-      ...options,
-      id: sessionId
-    };
-    
-    dispatch({
-      type: 'START_SESSION',
-      payload: sessionData
-    });
-    
-    setIsActive(true);
-    toast.success('Interview session started');
-    
-    await saveSessionToSupabase(sessionId, sessionData);
-    
-    setIsProcessing(true);
+  const createInterview = async (data: any): Promise<string> => {
+    setIsLoading(true);
     try {
-      const initialQuestion = await generateInterviewQuestion(
-        selectedRole,
-        selectedCategory,
-        []
-      );
-      
-      const welcomeMessage = `Hello! I'll be your technical interviewer today. We'll focus on ${selectedCategory} questions for a ${selectedRole} role using ${selectedLanguage}.\n\n${initialQuestion}`;
-      
-      const messageId = `msg-${Date.now()}`;
-      
-      dispatch({
-        type: 'ADD_MESSAGE',
-        payload: {
-          role: 'assistant',
-          content: welcomeMessage,
-        },
-      });
-      
-      await saveMessageToSupabase(sessionId, messageId, {
-        role: 'assistant',
-        content: welcomeMessage
-      });
-    } catch (error) {
-      console.error('Error starting interview:', error);
-      
-      const fallbackMessage = `Hello! I'll be your technical interviewer today. We'll focus on ${selectedCategory} questions for a ${selectedRole} role using ${selectedLanguage}.\n\nLet's start with a common question: Can you explain how you approach problem-solving in your development work? Please walk me through your typical process from understanding requirements to implementation.`;
-      
-      const messageId = `msg-${Date.now()}`;
-      
-      dispatch({
-        type: 'ADD_MESSAGE',
-        payload: {
-          role: 'assistant',
-          content: fallbackMessage,
-        },
-      });
-      
-      await saveMessageToSupabase(sessionId, messageId, {
-        role: 'assistant',
-        content: fallbackMessage
-      });
+      // For guest users, save session to localStorage and return a temporary ID
+      if (user?.email === 'guest@example.com') {
+        const sessionId = `guest-session-${Date.now()}`;
+        localStorage.setItem(`interview_session_${sessionId}`, JSON.stringify({
+          id: sessionId,
+          user_id: user.id,
+          ...data,
+          start_time: new Date().toISOString(),
+          is_completed: false
+        }));
+        return sessionId;
+      }
+
+      // For logged in users, save to Supabase
+      const { data: interview, error } = await supabase
+        .from('interview_sessions')
+        .insert({
+          user_id: user?.id,
+          ...data,
+          start_time: new Date().toISOString(),
+        })
+        .select();
+
+      if (error) {
+        throw error;
+      }
+
+      return interview[0].id;
+    } catch (error: any) {
+      toast.error(error.message || 'Failed to create interview');
+      throw error;
     } finally {
-      setIsProcessing(false);
+      setIsLoading(false);
     }
   };
 
-  const saveSessionToSupabase = async (sessionId: string, sessionData: any) => {
+  const startInterview = async (id: string): Promise<void> => {
+    setIsLoading(true);
     try {
-      const currentUser = (await supabase.auth.getUser()).data.user;
-      let userId = currentUser?.id;
-      
-      if (!userId && sessionData.user?.id) {
-        userId = sessionData.user.id;
-      } else if (!userId) {
-        userId = `guest-${Date.now()}`;
+      // For guest users
+      if (user?.email === 'guest@example.com') {
+        const sessionData = localStorage.getItem(`interview_session_${id}`);
+        if (!sessionData) throw new Error('Interview session not found');
+        return;
       }
-      
-      const { error } = await supabase.from('interview_sessions').insert({
-        id: sessionId,
-        user_id: userId,
-        role_type: sessionData.role,
-        language: sessionData.language,
-        category: sessionData.category,
-        questions_limit: 5,
-        time_limit: 30,
-        created_at: new Date().toISOString(),
-        updated_at: new Date().toISOString(),
-        start_time: new Date().toISOString()
-      });
-      
+
+      // For logged in users
+      const { error } = await supabase
+        .from('interview_sessions')
+        .update({
+          start_time: new Date().toISOString(),
+        })
+        .eq('id', id);
+
       if (error) {
-        console.error('Error saving session to Supabase:', error);
-        toast.error('Failed to save interview session. Continuing in offline mode.');
+        throw error;
       }
-    } catch (error) {
-      console.error('Failed to save session to Supabase:', error);
-      toast.error('Failed to save interview session. Continuing in offline mode.');
+    } catch (error: any) {
+      toast.error(error.message || 'Failed to start interview');
+      throw error;
+    } finally {
+      setIsLoading(false);
     }
   };
 
-  const saveMessageToSupabase = async (sessionId: string, messageId: string, message: any) => {
+  const submitAnswer = async (id: string, answer: string, previousQuestions: string[]): Promise<any> => {
+    setIsLoading(true);
     try {
-      const { error } = await supabase.from('interview_messages').insert({
-        id: messageId,
-        session_id: sessionId,
-        is_bot: message.role === 'assistant',
-        content: message.content,
-        created_at: new Date().toISOString()
-      });
-      
-      if (error) {
-        console.error('Error saving message to Supabase:', error);
+      // For guest users
+      if (user?.email === 'guest@example.com') {
+        const sessionData = localStorage.getItem(`interview_session_${id}`);
+        if (!sessionData) throw new Error('Interview session not found');
+        
+        const session = JSON.parse(sessionData);
+        const nextQuestion = await generateInterviewQuestion(
+          session.role_type || 'Software Engineer',
+          session.category || 'JavaScript',
+          previousQuestions,
+          answer,
+          session.custom_prompt
+        );
+        return nextQuestion;
       }
-    } catch (error) {
-      console.error('Failed to save message to Supabase:', error);
+
+      // For logged in users, first save the answer, then generate the next question
+      const { data: interview, error: fetchError } = await supabase
+        .from('interview_sessions')
+        .select('*')
+        .eq('id', id)
+        .single();
+
+      if (fetchError) throw fetchError;
+
+      const { error: answerError } = await supabase
+        .from('interview_messages')
+        .insert({
+          session_id: id,
+          is_bot: false,
+          content: answer,
+        });
+
+      if (answerError) throw answerError;
+
+      // Generate the next question
+      const nextQuestion = await generateInterviewQuestion(
+        interview.role_type || 'Software Engineer',
+        interview.category || 'JavaScript',
+        previousQuestions,
+        answer,
+        interview.custom_prompt
+      );
+
+      // Save the question to the database
+      const { error: questionError } = await supabase
+        .from('interview_messages')
+        .insert({
+          session_id: id,
+          is_bot: true,
+          content: nextQuestion,
+        });
+
+      if (questionError) throw questionError;
+
+      return nextQuestion;
+    } catch (error: any) {
+      toast.error(error.message || 'Failed to submit answer');
+      throw error;
+    } finally {
+      setIsLoading(false);
     }
   };
 
-  const endSession = async () => {
-    dispatch({ type: 'END_SESSION' });
-    setIsActive(false);
-    toast.success('Interview session ended');
-    
+  const endInterview = async (id: string): Promise<void> => {
+    setIsLoading(true);
     try {
+      // For guest users
+      if (user?.email === 'guest@example.com') {
+        const sessionData = localStorage.getItem(`interview_session_${id}`);
+        if (!sessionData) throw new Error('Interview session not found');
+        
+        const session = JSON.parse(sessionData);
+        session.is_completed = true;
+        session.end_time = new Date().toISOString();
+        localStorage.setItem(`interview_session_${id}`, JSON.stringify(session));
+        return;
+      }
+
+      // For logged in users
       const { error } = await supabase
         .from('interview_sessions')
         .update({
           end_time: new Date().toISOString(),
-          updated_at: new Date().toISOString(),
-          current_question_count: state.messages.filter(m => m.role === 'user').length
         })
-        .eq('id', state.id);
-      
+        .eq('id', id);
+
       if (error) {
-        console.error('Error updating session in Supabase:', error);
+        throw error;
       }
-      
-      window.location.href = `/interview/results/${state.id}`;
-    } catch (error) {
-      console.error('Failed to update session in Supabase:', error);
+    } catch (error: any) {
+      toast.error(error.message || 'Failed to end interview');
+      throw error;
+    } finally {
+      setIsLoading(false);
     }
   };
 
-  const sendMessage = async (content: string) => {
-    const userMessageId = `msg-${Date.now()}`;
-    
-    dispatch({
-      type: 'ADD_MESSAGE',
-      payload: {
-        role: 'user',
-        content,
-      },
-    });
-    
-    await saveMessageToSupabase(state.id, userMessageId, {
-      role: 'user',
-      content
-    });
-
-    setIsProcessing(true);
-
+  const fetchInterview = async (id: string): Promise<any> => {
+    setIsLoading(true);
     try {
-      const previousUserMessage = state.messages
-        .filter(msg => msg.role === 'user')
-        .pop()?.content;
-      
-      const previousQuestions = state.messages
-        .filter(msg => msg.role === 'assistant')
-        .map(msg => msg.content);
-      
-      const questionCount = state.messages.filter(m => m.role === 'user').length;
-      
-      if (questionCount >= 5) {
-        const aiMessageId = `msg-${Date.now()}`;
+      // For guest users
+      if (user?.email === 'guest@example.com') {
+        const sessionData = localStorage.getItem(`interview_session_${id}`);
+        if (!sessionData) throw new Error('Interview session not found');
+        return JSON.parse(sessionData);
+      }
+
+      // For logged in users
+      const { data, error } = await supabase
+        .from('interview_sessions')
+        .select('*')
+        .eq('id', id)
+        .single();
+
+      if (error) {
+        throw error;
+      }
+
+      return data;
+    } catch (error: any) {
+      toast.error(error.message || 'Failed to fetch interview');
+      throw error;
+    } finally {
+      setIsLoading(false);
+    }
+  };
+
+  const fetchInterviews = async (): Promise<any[]> => {
+    setIsLoading(true);
+    try {
+      // For guest users
+      if (user?.email === 'guest@example.com') {
+        // Find all interview sessions in localStorage
+        const sessions = [];
+        for (let i = 0; i < localStorage.length; i++) {
+          const key = localStorage.key(i);
+          if (key && key.startsWith('interview_session_')) {
+            const sessionData = localStorage.getItem(key);
+            if (sessionData) {
+              sessions.push(JSON.parse(sessionData));
+            }
+          }
+        }
+        return sessions;
+      }
+
+      // For logged in users
+      const { data, error } = await supabase
+        .from('interview_sessions')
+        .select('*')
+        .eq('user_id', user?.id)
+        .order('created_at', { ascending: false });
+
+      if (error) {
+        throw error;
+      }
+
+      return data || [];
+    } catch (error: any) {
+      toast.error(error.message || 'Failed to fetch interviews');
+      return [];
+    } finally {
+      setIsLoading(false);
+    }
+  };
+
+  const fetchResults = async (id: string): Promise<any> => {
+    setIsLoading(true);
+    try {
+      // For guest users
+      if (user?.email === 'guest@example.com') {
+        const resultData = localStorage.getItem(`interview_result_${id}`);
+        if (resultData) {
+          return JSON.parse(resultData);
+        }
         
-        const completionMessage = "Thank you for completing the interview! I've collected enough responses to provide you with feedback. Let me summarize our discussion and give you some insights on your performance.";
+        // If no result exists yet, generate one
+        const sessionData = localStorage.getItem(`interview_session_${id}`);
+        const messagesData = localStorage.getItem(`messages_${id}`);
         
-        dispatch({
-          type: 'ADD_MESSAGE',
-          payload: {
-            role: 'assistant',
-            content: completionMessage,
+        if (!sessionData || !messagesData) {
+          throw new Error('Interview data not found');
+        }
+        
+        const session = JSON.parse(sessionData);
+        const messages = JSON.parse(messagesData);
+        
+        const userMessages = messages.filter((m: any) => !m.is_bot).map((m: any) => m.content);
+        const botMessages = messages.filter((m: any) => m.is_bot).map((m: any) => m.content);
+        
+        let analysis = {
+          feedback: "Analysis could not be generated.",
+          score: 5,
+          strengths: ["Participation in the interview"],
+          areas_for_improvement: ["Consider revisiting the key concepts discussed"]
+        };
+        
+        if (userMessages.length > 0) {
+          try {
+            analysis = await evaluateAnswer(
+              botMessages.join('\n\n'),
+              userMessages.join('\n\n'),
+              session.role_type,
+              session.category
+            );
+          } catch (error) {
+            console.error('Error generating analysis:', error);
+          }
+        }
+        
+        const result = {
+          sessionData: {
+            ...session,
+            is_completed: true,
+            end_time: session.end_time || new Date().toISOString()
           },
-        });
+          messages: messages,
+          analysis: analysis
+        };
         
-        await saveMessageToSupabase(state.id, aiMessageId, {
-          role: 'assistant',
-          content: completionMessage
-        });
+        localStorage.setItem(`interview_result_${id}`, JSON.stringify(result));
+        return result;
+      }
+
+      // For logged in users, fetch the session, messages, and analysis
+      const { data: sessionData, error: sessionError } = await supabase
+        .from('interview_sessions')
+        .select('*')
+        .eq('id', id)
+        .single();
+
+      if (sessionError) throw sessionError;
+
+      const { data: messagesData, error: messagesError } = await supabase
+        .from('interview_messages')
+        .select('*')
+        .eq('session_id', id)
+        .order('created_at', { ascending: true });
+
+      if (messagesError) throw messagesError;
+
+      const { data: analysisData, error: analysisError } = await supabase
+        .from('interview_analysis')
+        .select('*')
+        .eq('session_id', id)
+        .single();
+
+      // If no analysis exists yet, generate one
+      if (analysisError || !analysisData) {
+        const userMessages = messagesData.filter((m: any) => !m.is_bot).map((m: any) => m.content);
+        const botMessages = messagesData.filter((m: any) => m.is_bot).map((m: any) => m.content);
         
-        await endSession();
+        if (userMessages.length > 0) {
+          const analysis = await evaluateAnswer(
+            botMessages.join('\n\n'),
+            userMessages.join('\n\n'),
+            sessionData.role_type,
+            sessionData.category
+          );
+          
+          const { error: insertError } = await supabase
+            .from('interview_analysis')
+            .insert({
+              session_id: id,
+              summary: {
+                strengths: analysis.strengths || [],
+                weaknesses: analysis.areas_for_improvement || [],
+                score: analysis.score || 0,
+                feedback: analysis.feedback || '',
+                recommendations: analysis.areas_for_improvement || []
+              }
+            });
+            
+          if (insertError) console.error('Error saving analysis:', insertError);
+          
+          return {
+            sessionData,
+            messages: messagesData,
+            analysis: {
+              summary: {
+                strengths: analysis.strengths,
+                weaknesses: analysis.areas_for_improvement,
+                score: analysis.score,
+                feedback: analysis.feedback,
+                recommendations: analysis.areas_for_improvement
+              }
+            }
+          };
+        }
+      }
+
+      return {
+        sessionData,
+        messages: messagesData,
+        analysis: analysisData
+      };
+    } catch (error: any) {
+      toast.error(error.message || 'Failed to fetch results');
+      throw error;
+    } finally {
+      setIsLoading(false);
+    }
+  };
+
+  const deleteInterview = async (id: string): Promise<void> => {
+    setIsLoading(true);
+    try {
+      // For guest users
+      if (user?.email === 'guest@example.com') {
+        localStorage.removeItem(`interview_session_${id}`);
+        localStorage.removeItem(`messages_${id}`);
+        localStorage.removeItem(`interview_result_${id}`);
         return;
       }
-      
-      let aiResponse;
-      if (previousUserMessage) {
-        aiResponse = await generateInterviewQuestion(
-          state.role,
-          state.category,
-          previousQuestions,
-          previousUserMessage
-        );
-      } else {
-        aiResponse = await generateInterviewQuestion(
-          state.role,
-          state.category,
-          previousQuestions
-        );
-      }
-      
-      const aiMessageId = `msg-${Date.now()}`;
-      
-      dispatch({
-        type: 'ADD_MESSAGE',
-        payload: {
-          role: 'assistant',
-          content: aiResponse,
-        },
-      });
-      
-      await saveMessageToSupabase(state.id, aiMessageId, {
-        role: 'assistant',
-        content: aiResponse
-      });
-      
-      const newQuestionCount = questionCount + 1;
-      await supabase
+
+      // For logged in users
+      const { error } = await supabase
         .from('interview_sessions')
-        .update({
-          current_question_count: newQuestionCount,
-          updated_at: new Date().toISOString()
-        })
-        .eq('id', state.id);
-      
-    } catch (error) {
-      console.error('Error getting AI response:', error);
-      toast.error('Failed to get response from AI interviewer');
-      
-      const fallbackResponses = [
-        "That's an interesting approach. Let's move on to another aspect of this topic. Can you explain how you would handle error cases in a similar scenario?",
-        "Thank you for that explanation. I can see you have a good grasp of the concepts. Now, I'd like to understand how you approach debugging complex issues in your codebase. Could you walk me through your process?",
-        "Good points. I appreciate the thoroughness of your answer. Let's shift gears a bit. Could you describe a challenging technical problem you've solved recently and how you approached it?",
-        "I appreciate your response. It shows you have experience with this topic. How would you ensure that your solution is scalable for larger datasets or user bases?",
-        "Interesting perspective. You've covered some important aspects there. Now, could you explain how you would test this implementation to ensure it works correctly?"
-      ];
-      
-      const randomFallback = fallbackResponses[Math.floor(Math.random() * fallbackResponses.length)];
-      const fallbackMessageId = `msg-${Date.now()}`;
-      
-      dispatch({
-        type: 'ADD_MESSAGE',
-        payload: {
-          role: 'assistant',
-          content: randomFallback,
-        },
-      });
-      
-      await saveMessageToSupabase(state.id, fallbackMessageId, {
-        role: 'assistant',
-        content: randomFallback
-      });
+        .delete()
+        .eq('id', id);
+
+      if (error) {
+        throw error;
+      }
+
+      toast.success('Interview deleted successfully');
+    } catch (error: any) {
+      toast.error(error.message || 'Failed to delete interview');
+      throw error;
     } finally {
-      setIsProcessing(false);
+      setIsLoading(false);
     }
-  };
-
-  const processResume = (text: string) => {
-    dispatch({ type: 'SET_RESUME', payload: text });
-    toast.success('Resume processed successfully');
-  };
-
-  const setCustomTopics = (topics: string[]) => {
-    dispatch({ type: 'SET_CUSTOM_TOPICS', payload: topics });
-    toast.success('Custom topics updated');
-  };
-
-  const toggleSpeaking = () => {
-    setIsSpeaking(!isSpeaking);
   };
 
   return (
     <InterviewContext.Provider
       value={{
-        session: state,
-        isActive,
-        isSpeaking,
-        isProcessing,
-        selectedRole,
-        selectedLanguage,
-        selectedCategory,
-        startSession,
-        endSession,
-        sendMessage,
-        setRole: setSelectedRole,
-        setLanguage: setSelectedLanguage,
-        setCategory: setSelectedCategory,
-        processResume,
-        setCustomTopics,
-        toggleSpeaking,
+        createInterview,
+        startInterview,
+        endInterview,
+        submitAnswer,
+        fetchInterview,
+        fetchInterviews,
+        fetchResults,
+        deleteInterview,
+        isLoading,
       }}
     >
       {children}
@@ -450,10 +448,10 @@ export const InterviewProvider: React.FC<{ children: React.ReactNode }> = ({ chi
   );
 };
 
-export const useInterview = () => {
+export const useInterviews = () => {
   const context = useContext(InterviewContext);
   if (context === undefined) {
-    throw new Error('useInterview must be used within an InterviewProvider');
+    throw new Error('useInterviews must be used within an InterviewProvider');
   }
   return context;
 };

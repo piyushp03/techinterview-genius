@@ -10,7 +10,7 @@ import { Button } from '@/components/ui/button';
 import { Progress } from '@/components/ui/progress';
 import { Maximize, Minimize, ArrowLeft, Clock, CheckSquare } from 'lucide-react';
 import { toast } from 'sonner';
-import { generateInterviewQuestion, evaluateAnswer } from '@/utils/openaiService';
+import { generateInterviewQuestion, evaluateAnswer, AnswerEvaluation } from '@/utils/openaiService';
 
 const InterviewSession = () => {
   const { id } = useParams<{ id: string }>();
@@ -41,7 +41,35 @@ const InterviewSession = () => {
           userData = JSON.parse(localStorage.getItem('guestUser')!);
         }
         
-        // Fetch session data
+        if (id.startsWith('guest-session')) {
+          // Guest session handling
+          const storedSession = localStorage.getItem(`interview_session_${id}`);
+          if (storedSession) {
+            const sessionData = JSON.parse(storedSession);
+            setSessionData(sessionData);
+            setTimeRemaining(sessionData.time_limit * 60);
+            setQuestionCount(sessionData.current_question_count || 0);
+            
+            // Check if there are stored messages for this session
+            const storedMessages = localStorage.getItem(`messages_${id}`);
+            if (storedMessages) {
+              setMessages(JSON.parse(storedMessages));
+            } else {
+              // Generate first question
+              await generateFirstQuestion({
+                role_type: sessionData.role_type,
+                language: sessionData.language,
+                category: sessionData.category,
+                custom_prompt: sessionData.custom_prompt
+              });
+            }
+            
+            setLoading(false);
+            return;
+          }
+        }
+        
+        // For registered users, fetch from Supabase
         const { data, error } = await supabase
           .from('interview_sessions')
           .select('*')
@@ -50,7 +78,7 @@ const InterviewSession = () => {
         
         if (error) {
           console.error("Error fetching session:", error);
-          // For guest users, create session data locally
+          // For guest users, create session data locally using URL parameters
           if (userData && userData.email === 'guest@example.com') {
             const params = new URLSearchParams(window.location.search);
             const role = params.get('role') || 'frontend';
@@ -171,13 +199,15 @@ const InterviewSession = () => {
       const initialQuestion = await generateInterviewQuestion(
         sessionData.role_type,
         sessionData.category,
-        []
+        [],
+        undefined,
+        sessionData.custom_prompt
       );
       
       const welcomeMessage = `Hello! I'll be your technical interviewer today. We'll focus on ${sessionData.category} questions for a ${sessionData.role_type} role using ${sessionData.language}.\n\n${initialQuestion}`;
       
       // For guest users, store messages locally
-      if (user?.email === 'guest@example.com') {
+      if (id?.startsWith('guest-session')) {
         const newMessage = {
           id: `guest-msg-${Date.now()}`,
           session_id: id,
@@ -188,6 +218,17 @@ const InterviewSession = () => {
         
         setMessages([newMessage]);
         setQuestionCount(1);
+        
+        // Save to localStorage
+        localStorage.setItem(`messages_${id}`, JSON.stringify([newMessage]));
+        
+        // Update session data
+        const updatedSession = {
+          ...sessionData,
+          current_question_count: 1
+        };
+        localStorage.setItem(`interview_session_${id}`, JSON.stringify(updatedSession));
+        
         return;
       }
       
@@ -224,6 +265,10 @@ const InterviewSession = () => {
       
       setMessages([newMessage]);
       setQuestionCount(1);
+      
+      if (id?.startsWith('guest-session')) {
+        localStorage.setItem(`messages_${id}`, JSON.stringify([newMessage]));
+      }
     } finally {
       setIsProcessing(false);
     }
@@ -244,12 +289,15 @@ const InterviewSession = () => {
         created_at: new Date().toISOString()
       };
       
-      // For guest users, handle locally
-      if (user?.email === 'guest@example.com') {
+      // Check if this is a guest session
+      if (id?.startsWith('guest-session')) {
         setMessages(prev => [...prev, userMessage]);
         setInput('');
         
-        // Check question limit for guest users
+        // Save messages to localStorage
+        localStorage.setItem(`messages_${id}`, JSON.stringify([...messages, userMessage]));
+        
+        // Check question limit
         if (questionCount >= (sessionData?.questions_limit || 5)) {
           const finalMessage = {
             id: `final-msg-${Date.now()}`,
@@ -260,6 +308,8 @@ const InterviewSession = () => {
           };
           
           setMessages(prev => [...prev, finalMessage]);
+          localStorage.setItem(`messages_${id}`, JSON.stringify([...messages, userMessage, finalMessage]));
+          
           await endInterview();
           return;
         }
@@ -275,7 +325,8 @@ const InterviewSession = () => {
           sessionData.role_type,
           sessionData.category,
           previousQuestions,
-          previousAnswer
+          previousAnswer,
+          sessionData.custom_prompt
         );
         
         const botMessage = {
@@ -287,7 +338,27 @@ const InterviewSession = () => {
         };
         
         setMessages(prev => [...prev, botMessage]);
-        setQuestionCount(prev => prev + 1);
+        
+        // Save updated messages
+        localStorage.setItem(`messages_${id}`, JSON.stringify([...messages, userMessage, botMessage]));
+        
+        // Update question count
+        const newQuestionCount = questionCount + 1;
+        setQuestionCount(newQuestionCount);
+        
+        // Update session data
+        const updatedSession = {
+          ...sessionData,
+          current_question_count: newQuestionCount
+        };
+        localStorage.setItem(`interview_session_${id}`, JSON.stringify(updatedSession));
+        
+        // Check if we've reached the question limit
+        if (newQuestionCount >= sessionData.questions_limit) {
+          setTimeout(() => {
+            endInterview();
+          }, 3000);
+        }
         
         return;
       }
@@ -331,7 +402,8 @@ const InterviewSession = () => {
         sessionData.role_type,
         sessionData.category,
         previousQuestions,
-        previousAnswer
+        previousAnswer,
+        sessionData.custom_prompt
       );
       
       const { data: botMessage, error: botError } = await supabase
@@ -347,8 +419,16 @@ const InterviewSession = () => {
       
       setMessages(prev => [...prev, botMessage[0]]);
       
-      await updateQuestionCount(questionCount + 1);
-      setQuestionCount(prev => prev + 1);
+      const newQuestionCount = questionCount + 1;
+      await updateQuestionCount(newQuestionCount);
+      setQuestionCount(newQuestionCount);
+      
+      // Check if we've reached the question limit
+      if (newQuestionCount >= sessionData.questions_limit) {
+        setTimeout(() => {
+          endInterview();
+        }, 3000);
+      }
     } catch (error: any) {
       console.error('Error processing message:', error);
       toast.error('Failed to get AI response');
@@ -360,7 +440,7 @@ const InterviewSession = () => {
   const updateQuestionCount = async (count: number) => {
     try {
       // Skip for guest users
-      if (user?.email === 'guest@example.com') return;
+      if (id?.startsWith('guest-session')) return;
       
       await supabase
         .from('interview_sessions')
@@ -374,13 +454,42 @@ const InterviewSession = () => {
   const endInterview = async () => {
     try {
       // For guest users, redirect to results with local data
-      if (user?.email === 'guest@example.com') {
+      if (id?.startsWith('guest-session')) {
         setIsCompleted(true);
         
+        // Generate analysis for guest user
+        const userMessages = messages.filter(m => !m.is_bot).map(m => m.content);
+        const botMessages = messages.filter(m => m.is_bot).map(m => m.content);
+        
+        let analysis: AnswerEvaluation = {
+          feedback: "Unable to generate feedback at this time.",
+          score: 5,
+          strengths: ["Participation in the interview"],
+          areas_for_improvement: ["Consider revisiting the topics covered"]
+        };
+        
+        if (userMessages.length > 0) {
+          try {
+            analysis = await evaluateAnswer(
+              botMessages.join('\n\n'),
+              userMessages.join('\n\n'),
+              sessionData.role_type,
+              sessionData.category
+            );
+          } catch (error) {
+            console.error('Error generating analysis for guest:', error);
+          }
+        }
+        
         // Store interview data in localStorage for results page
-        localStorage.setItem(`interview_${id}`, JSON.stringify({
-          sessionData: sessionData,
-          messages: messages
+        localStorage.setItem(`interview_result_${id}`, JSON.stringify({
+          sessionData: {
+            ...sessionData,
+            is_completed: true,
+            end_time: new Date().toISOString()
+          },
+          messages: messages,
+          analysis: analysis
         }));
         
         if (timerRef.current) {
@@ -437,23 +546,23 @@ const InterviewSession = () => {
         
         if (userMessages.length > 0) {
           const analysis = await evaluateAnswer(
-            userMessages.join('\n\n'),
             botMessages.join('\n\n'),
+            userMessages.join('\n\n'),
             sessionData.role_type,
             sessionData.category
           );
           
-          // Save analysis - now properly typed as an object with the expected properties
+          // Save analysis
           await supabase
             .from('interview_analysis')
             .insert({
               session_id: id,
               summary: {
                 strengths: analysis.strengths || [],
-                weaknesses: analysis.weaknesses || [],
+                weaknesses: analysis.areas_for_improvement || [],
                 score: analysis.score || 0,
                 feedback: analysis.feedback || '',
-                recommendations: analysis.areas_for_improvement || [] // Note the field name change to match API response
+                recommendations: analysis.areas_for_improvement || []
               }
             });
         }
@@ -588,7 +697,7 @@ const InterviewSession = () => {
                 </TabsContent>
                 <TabsContent value="code" className="flex-1 p-4">
                   <CodeEditor
-                    language={sessionData?.language || 'javascript'}
+                    language={sessionData?.language?.toLowerCase() || 'javascript'}
                     initialCode={codeValue}
                     onChange={handleCodeChange}
                     readOnly={isCompleted}

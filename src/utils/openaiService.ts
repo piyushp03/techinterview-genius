@@ -1,3 +1,4 @@
+
 // Define the interface for resume analysis results
 export interface ResumeAnalysisResult {
   analysisText: string;
@@ -13,13 +14,19 @@ export interface ResumeAnalysisResult {
   summary: string;
 }
 
-import { ResumeAnalysisResult } from './openaiService';
+export interface AnswerEvaluation {
+  feedback: string;
+  score: number;
+  strengths: string[];
+  areas_for_improvement: string[];
+}
 
 export const generateInterviewQuestion = async (
   roleType: string,
   category: string,
   previousQuestions: string[],
-  previousAnswer?: string
+  previousAnswer?: string,
+  customPrompt?: string
 ): Promise<string> => {
   try {
     console.log("Generating interview question for:", roleType, category);
@@ -31,6 +38,11 @@ export const generateInterviewQuestion = async (
     try {
       // Use `let` instead of `const` to allow modification
       let systemPrompt = `You are an expert technical interviewer for a ${roleType} position. Generate a challenging but fair question related to ${category}.`;
+      
+      // If we have a custom prompt, use that instead
+      if (customPrompt && customPrompt.trim()) {
+        systemPrompt = customPrompt;
+      }
       
       // If we have a previous answer, include feedback in the system prompt
       if (previousAnswer) {
@@ -83,7 +95,7 @@ export const evaluateAnswer = async (
   answer: string,
   roleType: string,
   category: string
-): Promise<any> => {
+): Promise<AnswerEvaluation> => {
   try {
     console.log("Evaluating answer for:", roleType, category);
     
@@ -128,8 +140,8 @@ export const evaluateAnswer = async (
         throw new Error(data.error.message || "Error from OpenAI API");
       }
       
-      // Parse the response to get a proper object instead of a string
-      return JSON.parse(data.choices[0].message.content);
+      const parsedResult = JSON.parse(data.choices[0].message.content) as AnswerEvaluation;
+      return parsedResult;
     } catch (apiError) {
       console.error("API error:", apiError);
       // Fall back to a mock evaluation if the API call fails
@@ -177,7 +189,7 @@ function getFallbackQuestion(roleType: string, category: string): string {
 }
 
 // Helper function to get a fallback evaluation if API call fails
-function getFallbackEvaluation(question: string, answer: string) {
+function getFallbackEvaluation(question: string, answer: string): AnswerEvaluation {
   // Determine a fake score based on answer length as a simple heuristic
   const wordCount = answer.split(/\s+/).length;
   const score = Math.min(Math.max(Math.floor(wordCount / 10), 4), 9);

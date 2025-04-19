@@ -1,4 +1,3 @@
-
 import { useState, useEffect } from 'react';
 import { useNavigate, useSearchParams } from 'react-router-dom';
 import { useAuth } from '@/context/AuthContext';
@@ -7,8 +6,9 @@ import { Input } from '@/components/ui/input';
 import { Card, CardContent, CardDescription, CardFooter, CardHeader, CardTitle } from '@/components/ui/card';
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs';
 import { Label } from '@/components/ui/label';
-import { CheckCircle, Mail, AlertCircle, Check, X } from 'lucide-react';
+import { CheckCircle, Mail, AlertCircle, Check, X, Info } from 'lucide-react';
 import { toast } from 'sonner';
+import { Alert, AlertDescription, AlertTitle } from '@/components/ui/alert';
 
 const Auth = () => {
   const { login, register, loginAsGuest, isLoading } = useAuth();
@@ -76,9 +76,11 @@ const Auth = () => {
 
   const handleGuestLogin = async () => {
     try {
-      loginAsGuest();
+      await loginAsGuest();
+      navigate('/dashboard');
     } catch (error) {
       console.error('Guest login error:', error);
+      toast.error('Failed to login as guest. Please try again.');
     }
   };
 
@@ -217,43 +219,46 @@ const Auth = () => {
                       required
                     />
                     
-                    <div className="mt-2 p-3 border border-gray-200 rounded-md bg-gray-50">
-                      <p className="text-xs text-gray-500 mb-2">Password must:</p>
-                      <ul className="space-y-1">
-                        <li className="flex items-center text-xs">
-                          {passwordValidation.minLength ? (
-                            <Check className="mr-2 h-3 w-3 text-green-500" />
-                          ) : (
-                            <X className="mr-2 h-3 w-3 text-red-500" />
-                          )}
-                          <span>Be at least 8 characters long</span>
-                        </li>
-                        <li className="flex items-center text-xs">
-                          {passwordValidation.hasNumber ? (
-                            <Check className="mr-2 h-3 w-3 text-green-500" />
-                          ) : (
-                            <X className="mr-2 h-3 w-3 text-red-500" />
-                          )}
-                          <span>Include at least one number</span>
-                        </li>
-                        <li className="flex items-center text-xs">
-                          {passwordValidation.hasSpecial ? (
-                            <Check className="mr-2 h-3 w-3 text-green-500" />
-                          ) : (
-                            <X className="mr-2 h-3 w-3 text-red-500" />
-                          )}
-                          <span>Include at least one special character (!@#$%^&*)</span>
-                        </li>
-                        <li className="flex items-center text-xs">
-                          {passwordValidation.hasUppercase ? (
-                            <Check className="mr-2 h-3 w-3 text-green-500" />
-                          ) : (
-                            <X className="mr-2 h-3 w-3 text-red-500" />
-                          )}
-                          <span>Include at least one uppercase letter</span>
-                        </li>
-                      </ul>
-                    </div>
+                    <Alert className="mt-2" variant="outline">
+                      <Info className="h-4 w-4" />
+                      <AlertTitle>Password Requirements</AlertTitle>
+                      <AlertDescription>
+                        <ul className="space-y-1 mt-2">
+                          <li className="flex items-center text-xs">
+                            {passwordValidation.minLength ? (
+                              <Check className="mr-2 h-3 w-3 text-green-500" />
+                            ) : (
+                              <X className="mr-2 h-3 w-3 text-red-500" />
+                            )}
+                            <span>Be at least 8 characters long</span>
+                          </li>
+                          <li className="flex items-center text-xs">
+                            {passwordValidation.hasNumber ? (
+                              <Check className="mr-2 h-3 w-3 text-green-500" />
+                            ) : (
+                              <X className="mr-2 h-3 w-3 text-red-500" />
+                            )}
+                            <span>Include at least one number</span>
+                          </li>
+                          <li className="flex items-center text-xs">
+                            {passwordValidation.hasSpecial ? (
+                              <Check className="mr-2 h-3 w-3 text-green-500" />
+                            ) : (
+                              <X className="mr-2 h-3 w-3 text-red-500" />
+                            )}
+                            <span>Include at least one special character (!@#$%^&*)</span>
+                          </li>
+                          <li className="flex items-center text-xs">
+                            {passwordValidation.hasUppercase ? (
+                              <Check className="mr-2 h-3 w-3 text-green-500" />
+                            ) : (
+                              <X className="mr-2 h-3 w-3 text-red-500" />
+                            )}
+                            <span>Include at least one uppercase letter</span>
+                          </li>
+                        </ul>
+                      </AlertDescription>
+                    </Alert>
                   </div>
                   <Button 
                     type="submit" 
