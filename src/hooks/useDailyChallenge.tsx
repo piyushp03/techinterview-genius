@@ -5,11 +5,10 @@ import {
   getTodaysChallenge, 
   getUserChallengeAttempt, 
   getUserStats,
-  type DailyChallenge,
-  type UserChallenge,
-  type UserStats
+  DailyChallenge,
+  UserChallenge,
+  UserStats
 } from '@/utils/dailyChallengeService';
-import { toast } from 'sonner';
 
 export function useDailyChallenge() {
   const { user } = useAuth();
@@ -32,17 +31,10 @@ export function useDailyChallenge() {
         
         // Load today's challenge
         const dailyChallenge = await getTodaysChallenge();
-        
-        if (!dailyChallenge) {
-          toast.error("Failed to load today's challenge");
-          setError("Could not load daily challenge");
-          return;
-        }
-        
         setChallenge(dailyChallenge);
         
-        // Load user's attempt if any
-        if (dailyChallenge.id) {
+        if (dailyChallenge) {
+          // Load user's attempt if any
           const attempt = await getUserChallengeAttempt(user.id, dailyChallenge.id);
           setUserAttempt(attempt);
           
@@ -74,7 +66,6 @@ export function useDailyChallenge() {
       setUserStats(stats);
     } catch (err) {
       console.error('Error refreshing data:', err);
-      toast.error("Failed to refresh challenge data");
     }
   };
 

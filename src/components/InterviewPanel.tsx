@@ -3,8 +3,9 @@ import { useState, useRef, useEffect } from 'react';
 import { Mic, MicOff, Send, User, PauseCircle, PlayCircle, RotateCcw, Maximize, Minimize, Star, Volume2, VolumeX } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import useSpeechRecognition from '@/hooks/useSpeechRecognition';
-import { AudioRecorder, transcribeAudio, synthesizeSpeech, playAudio, setMuted } from '@/utils/speechRecognitionService';
+import { AudioRecorder, transcribeAudio, synthesizeSpeech, playAudio } from '@/utils/speechRecognitionService';
 import { toast } from 'sonner';
+import { supabase } from '@/integrations/supabase/client';
 
 interface InterviewPanelProps {
   isFullScreen: boolean;
@@ -15,6 +16,7 @@ interface InterviewPanelProps {
   input: string;
   setInput: (value: string) => void;
   isCompleted?: boolean;
+  sessionId?: string;
 }
 
 const InterviewPanel = ({ 
@@ -25,12 +27,13 @@ const InterviewPanel = ({
   isProcessing, 
   input, 
   setInput,
-  isCompleted = false
+  isCompleted = false,
+  sessionId
 }: InterviewPanelProps) => {
   const messagesEndRef = useRef<HTMLDivElement>(null);
   const messageInputRef = useRef<HTMLTextAreaElement>(null);
   const [isSpeaking, setIsSpeaking] = useState(false);
-  const [isMutedState, setIsMutedState] = useState(false);
+  const [isMuted, setIsMuted] = useState(false);
   const [isListeningWithWhisper, setIsListeningWithWhisper] = useState(false);
   const audioRecorderRef = useRef<AudioRecorder | null>(null);
   
@@ -48,21 +51,13 @@ const InterviewPanel = ({
   });
 
   useEffect(() => {
-    if (messagesEndRef.current) {
-      messagesEndRef.current.scrollIntoView({ behavior: 'smooth' });
-    }
+    scrollToBottom();
   }, [messages]);
-
-  // Update global mute state when component mute state changes
-  useEffect(() => {
-    // Use the imported setMuted function directly
-    setMuted(isMutedState);
-  }, [isMutedState]);
 
   // Auto-play the latest assistant message if speaking is enabled
   useEffect(() => {
     const playLatestMessage = async () => {
-      if (isSpeaking && !isMutedState && messages.length > 0) {
+      if (isSpeaking && !isMuted && messages.length > 0) {
         const latestMessage = messages[messages.length - 1];
         if (latestMessage.is_bot) {
           speakText(latestMessage.content);
@@ -71,13 +66,39 @@ const InterviewPanel = ({
     };
     
     playLatestMessage();
-  }, [messages, isSpeaking, isMutedState]);
+  }, [messages, isSpeaking, isMuted]);
+
+  const scrollToBottom = () => {
+    if (messagesEndRef.current) {
+      messagesEndRef.current.scrollIntoView({ behavior: 'smooth' });
+    }
+  };
 
   const handleSendMessage = async () => {
-    if (!input.trim() || isProcessing) return;
+    if (!input.trim() || isProcessing || isCompleted) return;
     
     if (listening) {
       stopListening();
+    }
+    
+    // If we have a sessionId, save the message to Supabase directly
+    if (sessionId) {
+      try {
+        const { error } = await supabase
+          .from('interview_messages')
+          .insert({
+            session_id: sessionId,
+            is_bot: false,
+            content: input.trim(),
+            created_at: new Date().toISOString()
+          });
+        
+        if (error) {
+          console.error('Error saving message to Supabase:', error);
+        }
+      } catch (err) {
+        console.error('Failed to save message to Supabase:', err);
+      }
     }
     
     await onSendMessage(input);
@@ -110,12 +131,12 @@ const InterviewPanel = ({
   };
 
   const toggleMute = () => {
-    setIsMutedState(!isMutedState);
-    toast.success(isMutedState ? 'Audio unmuted' : 'Audio muted');
+    setIsMuted(!isMuted);
+    toast.success(isMuted ? 'Audio unmuted' : 'Audio muted');
   };
 
   const startListeningWithWhisper = async () => {
-    if (isListeningWithWhisper) return;
+    if (isListeningWithWhisper || isCompleted) return;
     
     setIsListeningWithWhisper(true);
     toast.success('Whisper AI speech recognition activated');
@@ -144,7 +165,7 @@ const InterviewPanel = ({
   };
 
   const speakText = async (text: string) => {
-    if (isMutedState) return;
+    if (isMuted) return;
     
     try {
       const audioData = await synthesizeSpeech(text);
@@ -228,9 +249,9 @@ const InterviewPanel = ({
             variant="ghost" 
             size="icon"
             onClick={toggleMute}
-            title={isMutedState ? "Unmute audio" : "Mute audio"}
+            title={isMuted ? "Unmute audio" : "Mute audio"}
           >
-            {isMutedState ? (
+            {isMuted ? (
               <VolumeX className="h-5 w-5 text-red-500" />
             ) : (
               <Volume2 className="h-5 w-5" />
@@ -276,7 +297,7 @@ const InterviewPanel = ({
             onChange={(e) => setInput(e.target.value)}
             onKeyDown={handleKeyDown}
             placeholder={isCompleted ? "This interview is completed" : "Type your answer..."}
-            className="w-full px-4 py-3 pr-24 resize-none border rounded-lg focus:outline-none focus:ring-2 focus:ring-primary/50 min-h-[80px] max-h-40 bg-background text-foreground"
+            className="w-full px-4 py-3 pr-24 resize-none border rounded-lg focus:outline-none focus:ring-2 focus:ring-primary/50 min-h-[80px] max-h-40"
             rows={2}
             disabled={isProcessing || isCompleted || isListeningWithWhisper}
           />

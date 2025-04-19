@@ -1,214 +1,131 @@
 
-import { useState, useRef } from 'react';
-import { FilePlus, FileText, X, Upload } from 'lucide-react';
+import React, { useCallback, useState } from 'react';
+import { useDropzone } from 'react-dropzone';
+import { Textarea } from '@/components/ui/textarea';
 import { Button } from '@/components/ui/button';
+import { Upload, File, X, Loader2 } from 'lucide-react';
 import { toast } from 'sonner';
 
 interface ResumeUploaderProps {
-  onResumeProcessed: (text: string) => void;
+  onResumeData: (text: string) => void;
 }
 
-const ResumeUploader = ({ onResumeProcessed }: ResumeUploaderProps) => {
-  const [isDragging, setIsDragging] = useState(false);
+const ResumeUploader: React.FC<ResumeUploaderProps> = ({ onResumeData }) => {
+  const [resumeText, setResumeText] = useState('');
   const [file, setFile] = useState<File | null>(null);
-  const [isUploading, setIsUploading] = useState(false);
-  const fileInputRef = useRef<HTMLInputElement>(null);
+  const [isLoading, setIsLoading] = useState(false);
   
-  // HARDCODED OPENAI API KEY (from the existing files)
-  const OPENAI_API_KEY = "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";
-
-  const handleDragOver = (e: React.DragEvent) => {
-    e.preventDefault();
-    setIsDragging(true);
-  };
-
-  const handleDragLeave = () => {
-    setIsDragging(false);
-  };
-
-  const handleDrop = (e: React.DragEvent) => {
-    e.preventDefault();
-    setIsDragging(false);
-    
-    const droppedFile = e.dataTransfer.files[0];
-    if (isValidFile(droppedFile)) {
-      setFile(droppedFile);
-      processFile(droppedFile);
-    }
-  };
-
-  const handleFileChange = (e: React.ChangeEvent<HTMLInputElement>) => {
-    const selectedFile = e.target.files?.[0];
-    if (selectedFile && isValidFile(selectedFile)) {
-      setFile(selectedFile);
-      processFile(selectedFile);
-    }
-  };
-
-  const isValidFile = (file: File): boolean => {
-    const validTypes = ['application/pdf', 'application/msword', 'application/vnd.openxmlformats-officedocument.wordprocessingml.document', 'text/plain'];
-    if (!validTypes.includes(file.type)) {
-      toast.error('Please upload a PDF, DOCX, or TXT file');
-      return false;
-    }
-    if (file.size > 5 * 1024 * 1024) {
-      toast.error('File size should be less than 5MB');
-      return false;
-    }
-    return true;
-  };
-
-  const processFile = async (file: File) => {
-    setIsUploading(true);
-    
+  const extractTextFromFile = async (file: File) => {
+    setIsLoading(true);
     try {
-      // For text files, read directly
       if (file.type === 'text/plain') {
-        const text = await readTextFile(file);
-        onResumeProcessed(text);
-        toast.success('Resume processed successfully');
-        setIsUploading(false);
-        return;
+        // Handle text files
+        const text = await file.text();
+        setResumeText(text);
+        onResumeData(text);
+      } else if (file.type === 'application/pdf') {
+        // For PDF files, we'll just extract the text from the first few pages
+        // In a real app, you'd want to use a more robust PDF parser
+        const text = `Content extracted from PDF: ${file.name}
+        
+This is a simplified representation as we don't have a full PDF parser in this demo.
+Please enter the resume content manually or upload a text file.`;
+        setResumeText(text);
+        onResumeData(text);
+        toast.info('PDF extraction is limited in this demo. Consider pasting the text manually.');
+      } else if (
+        file.type === 'application/msword' ||
+        file.type === 'application/vnd.openxmlformats-officedocument.wordprocessingml.document'
+      ) {
+        // For Word docs, similar limitation
+        const text = `Content extracted from Word document: ${file.name}
+        
+This is a simplified representation as we don't have a full Word parser in this demo.
+Please enter the resume content manually or upload a text file.`;
+        setResumeText(text);
+        onResumeData(text);
+        toast.info('Word document extraction is limited in this demo. Consider pasting the text manually.');
+      } else {
+        toast.error('Unsupported file format. Please upload a text, PDF, DOC, or DOCX file.');
       }
-      
-      // For PDFs and DOCXs, we need to extract text
-      // In a real production app, you would use a dedicated service for this
-      // but for this demo, we'll simulate by using OpenAI's GPT model
-      
-      // First, convert the file to base64
-      const base64File = await fileToBase64(file);
-      
-      // For demo purposes, we'll use GPT to extract the text content
-      // In a real app, you would use a proper document processing API
-      const response = await fetch('https://api.openai.com/v1/chat/completions', {
-        method: 'POST',
-        headers: {
-          'Authorization': `Bearer ${OPENAI_API_KEY}`,
-          'Content-Type': 'application/json'
-        },
-        body: JSON.stringify({
-          model: 'gpt-4o-mini',
-          messages: [
-            { 
-              role: 'system', 
-              content: 'You are an expert at extracting structured text from resumes. Given a description of a resume, extract all the information including contact details, work experience, education, skills, and other relevant sections. Format it cleanly with clear section headers.' 
-            },
-            { 
-              role: 'user', 
-              content: `I'm uploading a resume file named "${file.name}". Since I can't directly provide the file contents, please help me generate a realistic text representation of a typical resume with sections for contact info, summary, work experience, education, skills, etc. This will be used for AI analysis purposes.` 
-            }
-          ],
-          temperature: 0.2
-        })
-      });
-      
-      if (!response.ok) {
-        throw new Error('Failed to process document');
-      }
-      
-      const data = await response.json();
-      const extractedText = data.choices[0].message.content;
-      
-      // Return the extracted text
-      onResumeProcessed(extractedText);
-      toast.success('Resume processed successfully');
     } catch (error) {
-      console.error('Error processing file:', error);
-      toast.error('Failed to process file');
+      console.error('Error extracting text from file:', error);
+      toast.error('Failed to extract text from file');
     } finally {
-      setIsUploading(false);
+      setIsLoading(false);
     }
   };
-  
-  const readTextFile = (file: File): Promise<string> => {
-    return new Promise((resolve, reject) => {
-      const reader = new FileReader();
-      reader.onload = (e) => resolve(e.target?.result as string);
-      reader.onerror = reject;
-      reader.readAsText(file);
-    });
-  };
-  
-  const fileToBase64 = (file: File): Promise<string> => {
-    return new Promise((resolve, reject) => {
-      const reader = new FileReader();
-      reader.onload = (e) => resolve(e.target?.result as string);
-      reader.onerror = reject;
-      reader.readAsDataURL(file);
-    });
+
+  const onDrop = useCallback((acceptedFiles: File[]) => {
+    const file = acceptedFiles[0];
+    if (file) {
+      setFile(file);
+      extractTextFromFile(file);
+    }
+  }, []);
+
+  const { getRootProps, getInputProps, isDragActive } = useDropzone({
+    onDrop,
+    accept: {
+      'text/plain': ['.txt'],
+      'application/pdf': ['.pdf'],
+      'application/msword': ['.doc'],
+      'application/vnd.openxmlformats-officedocument.wordprocessingml.document': ['.docx']
+    },
+    maxFiles: 1
+  });
+
+  const handleTextChange = (e: React.ChangeEvent<HTMLTextAreaElement>) => {
+    setResumeText(e.target.value);
+    onResumeData(e.target.value);
   };
 
-  const removeFile = () => {
+  const clearFile = () => {
     setFile(null);
-    if (fileInputRef.current) {
-      fileInputRef.current.value = '';
-    }
-  };
-
-  const openFileSelector = () => {
-    fileInputRef.current?.click();
   };
 
   return (
-    <div className="glass-card p-6 transition-all duration-300">
-      <h3 className="text-lg font-medium mb-4">Upload Resume</h3>
-      
-      {!file ? (
-        <>
-          <div
-            className={`border-2 border-dashed rounded-lg p-6 text-center transition-colors ${
-              isDragging 
-                ? 'border-primary bg-primary/5' 
-                : 'border-muted-foreground/20 hover:border-primary/50'
-            }`}
-            onDragOver={handleDragOver}
-            onDragLeave={handleDragLeave}
-            onDrop={handleDrop}
-          >
-            <FilePlus className="w-10 h-10 mx-auto mb-4 text-muted-foreground" />
-            <p className="mb-2 font-medium">Drag and drop your resume</p>
-            <p className="text-sm text-muted-foreground mb-4">
-              Supports PDF, DOCX, and TXT files (max 5MB)
-            </p>
-            <Button type="button" onClick={openFileSelector} variant="outline" className="mx-auto">
-              <Upload className="mr-2 h-4 w-4" />
-              Browse Files
-            </Button>
-            <input
-              type="file"
-              ref={fileInputRef}
-              onChange={handleFileChange}
-              accept=".pdf,.docx,.doc,.txt"
-              className="hidden"
-            />
-          </div>
-          <p className="text-xs text-center mt-3 text-muted-foreground">
-            Your resume will be used to personalize interview questions based on your skills and experience.
+    <div className="space-y-4">
+      <div
+        {...getRootProps()}
+        className={`border-2 border-dashed rounded-md p-6 text-center cursor-pointer transition-colors
+          ${isDragActive ? 'border-primary bg-primary/10' : 'border-muted-foreground/30 hover:border-primary/50'}`}
+      >
+        <input {...getInputProps()} />
+        <div className="flex flex-col items-center justify-center space-y-2">
+          <Upload className="h-8 w-8 text-muted-foreground" />
+          <p className="text-sm font-medium">
+            {isDragActive ? 'Drop the file here' : 'Drag & drop a file or click to browse'}
           </p>
-        </>
-      ) : (
-        <div className="bg-muted/50 rounded-lg p-4 flex items-center justify-between">
-          <div className="flex items-center">
-            <FileText className="w-8 h-8 mr-3 text-primary" />
-            <div>
-              <p className="font-medium truncate max-w-[180px] md:max-w-xs">
-                {file.name}
-              </p>
-              <p className="text-xs text-muted-foreground">
-                {(file.size / 1024).toFixed(1)} KB • {isUploading ? 'Processing...' : 'Processed'}
-              </p>
-            </div>
+          <p className="text-xs text-muted-foreground">
+            Supports TXT, PDF, DOC, DOCX
+          </p>
+        </div>
+      </div>
+      
+      {file && (
+        <div className="flex items-center justify-between bg-muted p-2 rounded-md">
+          <div className="flex items-center space-x-2">
+            <File className="h-4 w-4 text-muted-foreground" />
+            <span className="text-sm truncate max-w-[200px]">{file.name}</span>
           </div>
-          <Button
-            variant="ghost"
-            size="icon"
-            onClick={removeFile}
-            disabled={isUploading}
-            className="text-muted-foreground hover:text-foreground"
-          >
+          <Button variant="ghost" size="icon" onClick={clearFile}>
             <X className="h-4 w-4" />
           </Button>
         </div>
+      )}
+      
+      {isLoading ? (
+        <div className="flex justify-center py-4">
+          <Loader2 className="h-6 w-6 animate-spin text-primary" />
+        </div>
+      ) : (
+        <Textarea
+          placeholder="Or paste your resume content here..."
+          value={resumeText}
+          onChange={handleTextChange}
+          className="min-h-[150px]"
+        />
       )}
     </div>
   );
