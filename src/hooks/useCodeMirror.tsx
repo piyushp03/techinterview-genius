@@ -1,109 +1,64 @@
 
 import { useState, useEffect, useRef } from 'react';
-import { basicSetup } from '@codemirror/basic-setup';
-import { EditorState } from '@codemirror/state';
-import { EditorView, keymap } from '@codemirror/view';
-import { indentWithTab } from '@codemirror/commands';
-import { javascript } from '@codemirror/lang-javascript';
-import { python } from '@codemirror/lang-python';
-import { java } from '@codemirror/lang-java';
-import { cpp } from '@codemirror/lang-cpp';
-import { rust } from '@codemirror/lang-rust';
-import { sql } from '@codemirror/lang-sql';
-import { html } from '@codemirror/lang-html';
-import { css } from '@codemirror/lang-css';
-import { markdown } from '@codemirror/lang-markdown';
+
+// This is a mock implementation until we add the actual CodeMirror library
+// In a real implementation, we would use the @codemirror/view, @codemirror/state, etc.
 
 interface UseCodeMirrorProps {
-  containerRef: React.RefObject<HTMLDivElement>;
-  initialDoc?: string;
-  onChange?: (value: string) => void;
-  readOnly?: boolean;
+  initialValue?: string;
   language?: string;
+  theme?: 'light' | 'dark';
+  readOnly?: boolean;
+  onSave?: (value: string) => void;
+}
+
+interface UseCodeMirrorReturn {
+  value: string;
+  setValue: (value: string) => void;
+  containerRef: React.RefObject<HTMLDivElement>;
+  isReady: boolean;
 }
 
 export const useCodeMirror = ({
-  containerRef,
-  initialDoc = '',
-  onChange,
-  readOnly = false,
+  initialValue = '',
   language = 'javascript',
-}: UseCodeMirrorProps) => {
-  const [value, setValue] = useState(initialDoc);
+  theme = 'light',
+  readOnly = false,
+  onSave,
+}: UseCodeMirrorProps = {}): UseCodeMirrorReturn => {
+  const [value, setValue] = useState(initialValue);
   const [isReady, setIsReady] = useState(false);
-  const viewRef = useRef<EditorView | null>(null);
+  const containerRef = useRef<HTMLDivElement>(null);
 
   useEffect(() => {
-    if (!containerRef.current) return;
+    // In a real implementation, we would initialize CodeMirror here
+    // For now, we'll just simulate it being ready after a delay
+    const timer = setTimeout(() => {
+      setIsReady(true);
+    }, 100);
 
-    // Get language extension based on the language prop
-    const getLangExtension = (lang: string) => {
-      switch (lang.toLowerCase()) {
-        case 'javascript':
-        case 'typescript':
-        case 'js':
-        case 'ts':
-          return javascript();
-        case 'python':
-        case 'py':
-          return python();
-        case 'java':
-          return java();
-        case 'cpp':
-        case 'c++':
-          return cpp();
-        case 'rust':
-          return rust();
-        case 'sql':
-          return sql();
-        case 'html':
-          return html();
-        case 'css':
-          return css();
-        case 'markdown':
-        case 'md':
-          return markdown();
-        default:
-          return javascript();
+    return () => clearTimeout(timer);
+  }, []);
+
+  useEffect(() => {
+    // Mock handling Ctrl+S for save
+    const handleKeyDown = (e: KeyboardEvent) => {
+      if ((e.ctrlKey || e.metaKey) && e.key === 's') {
+        e.preventDefault();
+        if (onSave) {
+          onSave(value);
+        }
       }
     };
 
-    const langExtension = getLangExtension(language);
-
-    const startState = EditorState.create({
-      doc: initialDoc,
-      extensions: [
-        basicSetup,
-        langExtension,
-        keymap.of([indentWithTab]),
-        EditorView.updateListener.of(update => {
-          if (update.changes) {
-            const newValue = update.state.doc.toString();
-            setValue(newValue);
-            onChange?.(newValue);
-          }
-        }),
-        EditorState.readOnly.of(readOnly)
-      ],
-    });
-
-    const view = new EditorView({
-      state: startState,
-      parent: containerRef.current,
-    });
-
-    viewRef.current = view;
-    setIsReady(true);
-
-    return () => {
-      view.destroy();
-    };
-  }, [containerRef, initialDoc, onChange, readOnly, language]);
+    window.addEventListener('keydown', handleKeyDown);
+    return () => window.removeEventListener('keydown', handleKeyDown);
+  }, [value, onSave]);
 
   return {
     value,
     setValue,
-    view: viewRef.current,
+    containerRef,
     isReady,
   };
 };

@@ -10,7 +10,6 @@ import { Badge } from '@/components/ui/badge';
 import { getChatCompletion } from '@/utils/openaiService';
 import { toast } from 'sonner';
 import { formatDistanceToNow } from 'date-fns';
-import useSpeechRecognition from '@/hooks/useSpeechRecognition';
 
 interface Message {
   role: 'user' | 'assistant';
@@ -26,6 +25,62 @@ interface VoiceInterviewerProps {
   onClose?: () => void;
 }
 
+// Add WebSpeechAPI types
+interface SpeechRecognitionEvent extends Event {
+  results: SpeechRecognitionResultList;
+  resultIndex: number;
+}
+
+interface SpeechRecognitionResultList {
+  [index: number]: SpeechRecognitionResult;
+  length: number;
+}
+
+interface SpeechRecognitionResult {
+  [index: number]: SpeechRecognitionAlternative;
+  length: number;
+  isFinal: boolean;
+}
+
+interface SpeechRecognitionAlternative {
+  transcript: string;
+  confidence: number;
+}
+
+interface SpeechGrammar {
+  src: string;
+  weight: number;
+}
+
+interface SpeechGrammarList {
+  [index: number]: SpeechGrammar;
+  length: number;
+  addFromURI(src: string, weight: number): void;
+  addFromString(string: string, weight: number): void;
+}
+
+interface SpeechRecognition extends EventTarget {
+  continuous: boolean;
+  grammars: SpeechGrammarList;
+  interimResults: boolean;
+  lang: string;
+  maxAlternatives: number;
+  start(): void;
+  stop(): void;
+  abort(): void;
+  onresult: (event: SpeechRecognitionEvent) => void;
+  onerror: (event: Event) => void;
+  onend: () => void;
+}
+
+// Declare global window interface to include SpeechRecognition
+declare global {
+  interface Window {
+    SpeechRecognition: new () => SpeechRecognition;
+    webkitSpeechRecognition: new () => SpeechRecognition;
+  }
+}
+
 const VoiceInterviewer: React.FC<VoiceInterviewerProps> = ({
   role = 'Software Engineer',
   category = 'JavaScript',
@@ -35,30 +90,55 @@ const VoiceInterviewer: React.FC<VoiceInterviewerProps> = ({
 }) => {
   const [messages, setMessages] = useState<Message[]>([]);
   const [input, setInput] = useState('');
+  const [isListening, setIsListening] = useState(false);
   const [isSpeaking, setIsSpeaking] = useState(false);
-  const [isMuted, setIsMuted] = useState(false);
+  const [transcript, setTranscript] = useState('');
   const [isProcessing, setIsProcessing] = useState(false);
   const [questionCount, setQuestionCount] = useState(0);
   const [timeRemaining, setTimeRemaining] = useState(duration);
   const messagesEndRef = useRef<HTMLDivElement>(null);
+  const recognitionRef = useRef<SpeechRecognition | null>(null);
   const synthRef = useRef<SpeechSynthesis | null>(null);
+  const currentUtteranceRef = useRef<SpeechSynthesisUtterance | null>(null);
 
-  // Use our custom speech recognition hook
-  const { 
-    transcript, 
-    listening, 
-    startListening, 
-    stopListening, 
-    resetTranscript, 
-    browserSupportsSpeechRecognition 
-  } = useSpeechRecognition({
-    onResult: (transcript) => {
-      setInput(transcript);
-    },
-  });
-
-  // Initialize speech synthesis
+  // Initialize speech recognition and synthesis
   useEffect(() => {
+    const SpeechRecognitionAPI = window.SpeechRecognition || window.webkitSpeechRecognition;
+    
+    if (SpeechRecognitionAPI) {
+      recognitionRef.current = new SpeechRecognitionAPI();
+      recognitionRef.current.continuous = true;
+      recognitionRef.current.interimResults = true;
+      recognitionRef.current.lang = 'en-US';
+
+      recognitionRef.current.onresult = (event: SpeechRecognitionEvent) => {
+        const current = event.resultIndex;
+        const result = event.results[current];
+        const transcriptText = result[0].transcript;
+        setTranscript(transcriptText);
+        
+        // If it's a final result and not a partial one
+        if (result.isFinal) {
+          setInput(transcriptText);
+        }
+      };
+
+      recognitionRef.current.onerror = (event) => {
+        console.error('Speech recognition error', event);
+        toast.error('Speech recognition error occurred');
+        setIsListening(false);
+      };
+
+      recognitionRef.current.onend = () => {
+        if (isListening) {
+          // If it disconnected but we still want to listen, restart it
+          recognitionRef.current?.start();
+        }
+      };
+    } else {
+      toast.error('Speech recognition is not supported in this browser');
+    }
+
     if ('speechSynthesis' in window) {
       synthRef.current = window.speechSynthesis;
     } else {
@@ -66,6 +146,9 @@ const VoiceInterviewer: React.FC<VoiceInterviewerProps> = ({
     }
 
     return () => {
+      if (recognitionRef.current) {
+        recognitionRef.current.stop();
+      }
       if (synthRef.current) {
         synthRef.current.cancel();
       }
@@ -109,9 +192,7 @@ const VoiceInterviewer: React.FC<VoiceInterviewerProps> = ({
       timestamp: new Date() 
     }]);
     
-    if (!isMuted) {
-      speakText(welcomeMessage);
-    }
+    speakText(welcomeMessage);
     
     // Generate first question after welcome message
     setTimeout(() => {
@@ -120,14 +201,21 @@ const VoiceInterviewer: React.FC<VoiceInterviewerProps> = ({
   };
 
   const toggleListening = () => {
-    if (listening) {
-      stopListening();
+    if (!recognitionRef.current) {
+      toast.error('Speech recognition is not supported');
+      return;
+    }
+
+    if (isListening) {
+      recognitionRef.current.stop();
+      setIsListening(false);
       if (transcript) {
         handleUserInput(transcript);
-        resetTranscript();
+        setTranscript('');
       }
     } else {
-      startListening();
+      recognitionRef.current.start();
+      setIsListening(true);
       toast.success('Listening...');
     }
   };
@@ -143,36 +231,24 @@ const VoiceInterviewer: React.FC<VoiceInterviewerProps> = ({
       setIsSpeaking(false);
     } else {
       setIsSpeaking(true);
-      if (!isMuted) {
-        // Speak the last assistant message
-        const lastAssistantMessage = [...messages]
-          .reverse()
-          .find(msg => msg.role === 'assistant');
-        
-        if (lastAssistantMessage) {
-          speakText(lastAssistantMessage.content);
-        }
+      // Speak the last assistant message
+      const lastAssistantMessage = [...messages]
+        .reverse()
+        .find(msg => msg.role === 'assistant');
+      
+      if (lastAssistantMessage) {
+        speakText(lastAssistantMessage.content);
       }
     }
-  };
-
-  const toggleMute = () => {
-    setIsMuted(!isMuted);
-    if (!isMuted) {
-      // Cancel any ongoing speech when muting
-      if (synthRef.current) {
-        synthRef.current.cancel();
-      }
-    }
-    toast.success(isMuted ? 'Audio unmuted' : 'Audio muted');
   };
 
   const speakText = (text: string) => {
-    if (!synthRef.current || isMuted) return;
+    if (!synthRef.current) return;
 
     // Cancel any ongoing speech
     synthRef.current.cancel();
-
+    
+    // Create a new utterance
     const utterance = new SpeechSynthesisUtterance(text);
     utterance.rate = 1.0;
     utterance.pitch = 1.0;
@@ -196,13 +272,17 @@ const VoiceInterviewer: React.FC<VoiceInterviewerProps> = ({
 
     utterance.onend = () => {
       setIsSpeaking(false);
+      currentUtteranceRef.current = null;
     };
 
     utterance.onerror = (event) => {
       console.error('Speech synthesis error', event);
       setIsSpeaking(false);
+      currentUtteranceRef.current = null;
     };
 
+    // Save reference to current utterance
+    currentUtteranceRef.current = utterance;
     synthRef.current.speak(utterance);
   };
 
@@ -220,6 +300,7 @@ const VoiceInterviewer: React.FC<VoiceInterviewerProps> = ({
     ]);
 
     setInput('');
+    setTranscript('');
     processUserResponse(userInput);
   };
 
@@ -267,8 +348,8 @@ const VoiceInterviewer: React.FC<VoiceInterviewerProps> = ({
         }
       ]);
 
-      // Speak the response if speaking is enabled and not muted
-      if (isSpeaking && !isMuted) {
+      // Speak the response if speaking is enabled
+      if (isSpeaking) {
         speakText(response);
       }
 
@@ -325,8 +406,8 @@ const VoiceInterviewer: React.FC<VoiceInterviewerProps> = ({
         }
       ]);
 
-      // Speak the question if speaking is enabled and not muted
-      if (isSpeaking && !isMuted) {
+      // Speak the question if speaking is enabled
+      if (isSpeaking) {
         speakText(question);
       }
 
@@ -350,10 +431,8 @@ const VoiceInterviewer: React.FC<VoiceInterviewerProps> = ({
       }
     ]);
 
-    // Speak the final message if not muted
-    if (!isMuted) {
-      speakText("Thank you for completing the interview. I hope it was helpful. You can now return to the dashboard to see your results.");
-    }
+    // Speak the final message
+    speakText("Thank you for completing the interview. I hope it was helpful. You can now return to the dashboard to see your results.");
 
     // Call the onComplete callback with the messages
     if (onComplete) {
@@ -362,7 +441,9 @@ const VoiceInterviewer: React.FC<VoiceInterviewerProps> = ({
 
     // Call the onClose callback if provided
     if (onClose) {
-      onClose();
+      setTimeout(() => {
+        onClose();
+      }, 3000);
     }
   };
 
@@ -427,26 +508,13 @@ const VoiceInterviewer: React.FC<VoiceInterviewerProps> = ({
           <form onSubmit={handleSubmit} className="flex flex-col gap-2">
             <div className="relative">
               <Textarea
-                value={listening ? transcript : input}
+                value={isListening ? transcript : input}
                 onChange={(e) => setInput(e.target.value)}
                 placeholder="Type your response or use voice input..."
                 className="min-h-[80px] pr-20"
-                disabled={listening || isProcessing}
+                disabled={isListening || isProcessing}
               />
               <div className="absolute right-2 bottom-2 flex gap-1">
-                <Button
-                  type="button"
-                  size="icon"
-                  variant="ghost"
-                  onClick={toggleMute}
-                  disabled={isProcessing}
-                >
-                  {isMuted ? (
-                    <VolumeX className="h-4 w-4 text-red-500" />
-                  ) : (
-                    <Volume2 className="h-4 w-4" />
-                  )}
-                </Button>
                 <Button
                   type="button"
                   size="icon"
@@ -460,21 +528,20 @@ const VoiceInterviewer: React.FC<VoiceInterviewerProps> = ({
                     <Volume2 className="h-4 w-4" />
                   )}
                 </Button>
-                {browserSupportsSpeechRecognition && (
-                  <Button
-                    type="button"
-                    size="icon"
-                    variant="ghost"
-                    onClick={toggleListening}
-                    disabled={isProcessing}
-                  >
-                    {listening ? (
-                      <MicOff className="h-4 w-4 text-red-500" />
-                    ) : (
-                      <Mic className="h-4 w-4" />
-                    )}
-                  </Button>
-                )}
+                <Button
+                  type="button"
+                  size="icon"
+                  variant="ghost"
+                  onClick={toggleListening}
+                  disabled={isProcessing}
+                  className={isListening ? "text-red-500" : ""}
+                >
+                  {isListening ? (
+                    <MicOff className="h-4 w-4" />
+                  ) : (
+                    <Mic className="h-4 w-4" />
+                  )}
+                </Button>
               </div>
             </div>
             <div className="flex justify-between">
@@ -488,7 +555,7 @@ const VoiceInterviewer: React.FC<VoiceInterviewerProps> = ({
               </Button>
               <Button
                 type="submit"
-                disabled={(!input && !transcript) || isProcessing || listening}
+                disabled={(!input && !transcript) || isProcessing || isListening}
               >
                 {isProcessing ? (
                   <div className="h-4 w-4 animate-spin rounded-full border-2 border-current border-t-transparent" />

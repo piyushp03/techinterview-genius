@@ -1,245 +1,620 @@
 
-// Define the interface for resume analysis results
+import { toast } from 'sonner';
+
+// OpenAI API Key (hardcoded for testing purposes only - kept from original file)
+const OPENAI_API_KEY = "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";
+
+// Types
+export type ChatMessage = {
+  role: 'system' | 'user' | 'assistant';
+  content: string | Array<any>;
+};
+
+type ChatCompletionResponse = {
+  id: string;
+  choices: {
+    message: {
+      content: string;
+      role: string;
+    };
+    index: number;
+    finish_reason: string;
+  }[];
+};
+
+/**
+ * Get a completion from the OpenAI API
+ */
+export async function getChatCompletion(
+  messages: ChatMessage[],
+  options: {
+    model?: string;
+    temperature?: number;
+    max_tokens?: number;
+  } = {}
+): Promise<string> {
+  const {
+    model = 'gpt-4o-mini',
+    temperature = 0.7,
+    max_tokens = 1000,
+  } = options;
+
+  try {
+    const response = await fetch('https://api.openai.com/v1/chat/completions', {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+        Authorization: `Bearer ${OPENAI_API_KEY}`,
+      },
+      body: JSON.stringify({
+        model,
+        messages,
+        temperature,
+        max_tokens,
+      }),
+    });
+
+    if (!response.ok) {
+      const errorData = await response.json();
+      console.error('OpenAI API error:', errorData);
+      throw new Error(`OpenAI API error: ${response.status} ${response.statusText}`);
+    }
+
+    const data = await response.json() as ChatCompletionResponse;
+    return data.choices[0].message.content.trim();
+  } catch (error) {
+    console.error('Error calling OpenAI:', error);
+    toast.error('Failed to get response from AI. Please try again.');
+    return "I apologize, but I'm having trouble connecting to my knowledge base right now. Please try again in a moment.";
+  }
+}
+
+/**
+ * Generate a technical interview question based on parameters
+ */
+export async function generateInterviewQuestion(
+  role: string,
+  category: string,
+  previousQuestions: string[] = [],
+  resumeText?: string | any,
+  customTopics?: string[],
+  questionType: 'objective' | 'subjective' | 'mixed' = 'mixed',
+  isCodingEnabled: boolean = false
+): Promise<string> {
+  const systemPrompt = `You are an experienced technical interviewer conducting an interview for a ${role} role. 
+  Focus on ${category} questions that are challenging but fair. 
+  ${resumeText ? "Consider the candidate's background from their resume." : ""}
+  ${customTopics?.length ? 'Focus on these specific topics: ' + customTopics.join(', ') : ''}
+  ${isCodingEnabled ? 'Include coding challenges that can be solved in a web-based editor.' : 'Do not include coding challenges that require an editor.'}
+  
+  Question format: ${questionType === 'objective' 
+    ? 'Create multiple-choice questions with 4 options and clearly mark the correct answer.' 
+    : questionType === 'subjective'
+      ? 'Ask open-ended questions that require detailed explanations.'
+      : 'Mix both multiple-choice and open-ended questions.'
+  }
+  
+  Ask one clear, specific question at a time. Follow up on previous answers to create a coherent interview flow.`;
+
+  const messages: ChatMessage[] = [
+    { role: 'system', content: systemPrompt },
+  ];
+
+  if (resumeText) {
+    messages.push({
+      role: 'user',
+      content: `Here is the candidate's resume: ${typeof resumeText === 'string' ? resumeText : JSON.stringify(resumeText)}`,
+    });
+    messages.push({
+      role: 'assistant',
+      content: "I'll tailor questions based on this background.",
+    });
+  }
+
+  if (previousQuestions.length > 0) {
+    messages.push({
+      role: 'user',
+      content: `Previous questions and answers in this interview: ${previousQuestions.join(' | ')}`,
+    });
+  }
+
+  messages.push({
+    role: 'user',
+    content: `Generate a challenging ${category} interview question for a ${role} role. ${questionType === 'objective' ? 'Make it multiple choice with 4 options.' : questionType === 'subjective' ? 'Make it open-ended.' : ''}`,
+  });
+
+  return getChatCompletion(messages, {
+    temperature: 0.8,
+  });
+}
+
+/**
+ * Generate an objective multiple-choice question
+ */
+export async function generateObjectiveQuestion(
+  role: string,
+  category: string,
+  language: string
+): Promise<{
+  question: string;
+  options: string[];
+  correctAnswer: number;
+}> {
+  const systemPrompt = `Create a multiple-choice question for a ${role} interview focusing on ${category} in ${language}. 
+  The question should have exactly 4 options with only one correct answer.
+  Structure your response in JSON format with fields:
+  - question: the question text
+  - options: array of 4 possible answers
+  - correctAnswer: index (0-3) of the correct option
+  
+  Your response should be VALID JSON only.`;
+
+  const messages: ChatMessage[] = [
+    { role: 'system', content: systemPrompt },
+    { role: 'user', content: `Generate a ${category} multiple-choice question for a ${role} position using ${language}.` },
+  ];
+
+  try {
+    const response = await getChatCompletion(messages, {
+      temperature: 0.7,
+    });
+    
+    // Parse the JSON response
+    const result = JSON.parse(response);
+    return {
+      question: result.question,
+      options: result.options,
+      correctAnswer: result.correctAnswer,
+    };
+  } catch (error) {
+    console.error('Error generating objective question:', error);
+    return {
+      question: `What is a common use case for ${language} in ${category}?`,
+      options: [
+        'Option A',
+        'Option B',
+        'Option C',
+        'Option D',
+      ],
+      correctAnswer: 0,
+    };
+  }
+}
+
+/**
+ * Generate a coding challenge question
+ */
+export async function generateCodingChallenge(
+  role: string,
+  language: string,
+  difficulty: 'easy' | 'medium' | 'hard' = 'medium'
+): Promise<{
+  question: string;
+  starterCode: string;
+  testCases: string;
+  solutionCode: string;
+}> {
+  const systemPrompt = `Create a coding challenge for a ${role} interview using ${language}. 
+  The difficulty should be ${difficulty}.
+  Structure your response in JSON format with fields:
+  - question: detailed problem statement
+  - starterCode: boilerplate code to get the candidate started
+  - testCases: example test cases to verify solution
+  - solutionCode: a working solution
+  
+  Your response should be VALID JSON only.`;
+
+  const messages: ChatMessage[] = [
+    { role: 'system', content: systemPrompt },
+    { role: 'user', content: `Generate a ${difficulty} coding challenge for a ${role} position using ${language}.` },
+  ];
+
+  try {
+    const response = await getChatCompletion(messages, {
+      temperature: 0.7,
+      max_tokens: 2000,
+    });
+    
+    // Parse the JSON response
+    const result = JSON.parse(response);
+    return {
+      question: result.question,
+      starterCode: result.starterCode,
+      testCases: result.testCases,
+      solutionCode: result.solutionCode,
+    };
+  } catch (error) {
+    console.error('Error generating coding challenge:', error);
+    return {
+      question: `Write a function that reverses a string in ${language}.`,
+      starterCode: `// Write your code here\nfunction reverseString(str) {\n  // Your code here\n}`,
+      testCases: `reverseString("hello") // should return "olleh"`,
+      solutionCode: `function reverseString(str) {\n  return str.split('').reverse().join('');\n}`,
+    };
+  }
+}
+
+/**
+ * Evaluate a candidate's answer
+ */
+export async function evaluateAnswer(
+  question: string,
+  answer: string,
+  role: string,
+  category: string
+): Promise<{
+  feedback: string;
+  score: number; // 1-10
+  strengths: string[];
+  areas_for_improvement: string[];
+}> {
+  const systemPrompt = `You are an expert technical interviewer evaluating candidates for a ${role} role.
+  Provide constructive, specific feedback on the candidate's answer.
+  Be encouraging but honest about areas for improvement.
+  Evaluate based on technical accuracy, clarity of explanation, and problem-solving approach.`;
+
+  const messages: ChatMessage[] = [
+    { role: 'system', content: systemPrompt },
+    {
+      role: 'user',
+      content: `Question: ${question}\n\nCandidate's Answer: ${answer}\n\nPlease evaluate this answer for a ${role} position, focusing on ${category}. Provide a score from 1-10, list specific strengths, and suggest areas for improvement.`,
+    },
+  ];
+
+  const response = await getChatCompletion(messages, {
+    temperature: 0.5,
+  });
+
+  // Parse the response to extract score, strengths, and areas for improvement
+  let score = 5; // Default score
+  const strengths: string[] = [];
+  const areas_for_improvement: string[] = [];
+
+  try {
+    // Very basic parsing - in a real app, you'd use a more robust approach
+    if (response.includes('Score:')) {
+      const scoreMatch = response.match(/Score:\s*(\d+)/i);
+      if (scoreMatch && scoreMatch[1]) {
+        score = parseInt(scoreMatch[1], 10);
+        if (score < 1) score = 1;
+        if (score > 10) score = 10;
+      }
+    }
+
+    // Extract strengths
+    if (response.includes('Strengths:')) {
+      const strengthsSection = response.split('Strengths:')[1].split('Areas for improvement:')[0];
+      const strengthItems = strengthsSection.split('\n').filter(item => item.trim().startsWith('-'));
+      strengthItems.forEach(item => {
+        const cleaned = item.replace(/^-\s*/, '').trim();
+        if (cleaned) strengths.push(cleaned);
+      });
+    }
+
+    // Extract areas for improvement
+    if (response.includes('Areas for improvement:')) {
+      const improvementSection = response.split('Areas for improvement:')[1];
+      const improvementItems = improvementSection.split('\n').filter(item => item.trim().startsWith('-'));
+      improvementItems.forEach(item => {
+        const cleaned = item.replace(/^-\s*/, '').trim();
+        if (cleaned) areas_for_improvement.push(cleaned);
+      });
+    }
+
+    // If we couldn't parse any strengths or areas for improvement, create some defaults
+    if (strengths.length === 0) {
+      strengths.push("Clear explanation");
+      strengths.push("Good approach to the problem");
+    }
+
+    if (areas_for_improvement.length === 0) {
+      areas_for_improvement.push("Consider edge cases");
+      areas_for_improvement.push("Expand on technical details");
+    }
+  } catch (error) {
+    console.error('Error parsing AI response:', error);
+  }
+
+  return {
+    feedback: response,
+    score,
+    strengths,
+    areas_for_improvement,
+  };
+}
+
+/**
+ * Evaluate a coding solution
+ */
+export async function evaluateCodingSolution(
+  question: string,
+  userCode: string,
+  language: string,
+  expectedSolution: string
+): Promise<{
+  isCorrect: boolean;
+  feedback: string;
+  optimizationTips: string[];
+}> {
+  const systemPrompt = `You are an expert coding interviewer. Evaluate the candidate's code solution for correctness, efficiency, and coding style.
+  Be specific in your feedback and suggest improvements.`;
+
+  const messages: ChatMessage[] = [
+    { role: 'system', content: systemPrompt },
+    {
+      role: 'user',
+      content: `\nProblem: ${question}\n\nCandidate's Solution (${language}):\n\`\`\`\n${userCode}\n\`\`\`\n\nExpected Solution:\n\`\`\`\n${expectedSolution}\n\`\`\`\n\nEvaluate if the solution is correct. Provide specific feedback and optimization tips.\n      `,
+    },
+  ];
+
+  const response = await getChatCompletion(messages, {
+    temperature: 0.5,
+    max_tokens: 1500,
+  });
+
+  // Determine if the solution is correct based on the AI's assessment
+  const isCorrect = response.toLowerCase().includes('correct') && !response.toLowerCase().includes('incorrect');
+  
+  // Extract optimization tips
+  const optimizationTips: string[] = [];
+  if (response.includes('Optimization tips:') || response.includes('Optimization Tips:')) {
+    const tipsSection = response.split(/Optimization [Tt]ips:/)[1];
+    const tipItems = tipsSection.split('\n').filter(item => item.trim().startsWith('-'));
+    tipItems.forEach(item => {
+      const cleaned = item.replace(/^-\s*/, '').trim();
+      if (cleaned) optimizationTips.push(cleaned);
+    });
+  }
+
+  if (optimizationTips.length === 0) {
+    // Default optimization tips if none were extracted
+    optimizationTips.push("Consider edge cases");
+    optimizationTips.push("Optimize for time and space complexity");
+  }
+
+  return {
+    isCorrect,
+    feedback: response,
+    optimizationTips,
+  };
+}
+
+/**
+ * Calculate similarity between expected answer and provided answer
+ */
+export function calculateSimilarity(expectedAnswer: string, providedAnswer: string): number {
+  // This is a very simple implementation
+  // In a real app, you'd use more sophisticated NLP techniques
+  
+  // Normalize both strings
+  const normalizeText = (text: string) => {
+    return text
+      .toLowerCase()
+      .replace(/[^\w\s]/g, '')
+      .split(/\s+/)
+      .filter(word => word.length > 2);
+  };
+  
+  const expectedWords = new Set(normalizeText(expectedAnswer));
+  const providedWords = normalizeText(providedAnswer);
+  
+  let matchCount = 0;
+  for (const word of providedWords) {
+    if (expectedWords.has(word)) {
+      matchCount++;
+    }
+  }
+  
+  // Calculate Jaccard similarity
+  const union = new Set([...normalizeText(expectedAnswer), ...normalizeText(providedAnswer)]);
+  return matchCount / union.size;
+}
+
+/**
+ * Extract text from resume PDF
+ */
+export const extractTextFromResume = async (pdfBase64: string): Promise<string> => {
+  try {
+    const response = await fetch('https://api.openai.com/v1/chat/completions', {
+      method: 'POST',
+      headers: {
+        'Authorization': `Bearer ${OPENAI_API_KEY}`,
+        'Content-Type': 'application/json'
+      },
+      body: JSON.stringify({
+        model: 'gpt-4o',
+        messages: [
+          {
+            role: 'system',
+            content: 'You are an expert at extracting text from resume PDFs. Extract all the relevant information from this resume in a well-structured format. Include name, contact details, work experience, education, skills, projects, certifications, and any other relevant sections.'
+          },
+          {
+            role: 'user',
+            content: [
+              {
+                type: 'text',
+                text: 'Extract the complete text from this resume PDF. Format it in a well-structured way that preserves sections and important information.'
+              },
+              {
+                type: 'image_url',
+                image_url: {
+                  url: `data:application/pdf;base64,${pdfBase64}`
+                }
+              }
+            ]
+          }
+        ],
+        max_tokens: 4000
+      })
+    });
+
+    if (!response.ok) {
+      throw new Error('Failed to extract text from resume');
+    }
+
+    const data = await response.json();
+    return data.choices[0].message.content;
+  } catch (error) {
+    console.error('Error extracting text from resume:', error);
+    throw error;
+  }
+};
+
+/**
+ * Analyze resume and provide feedback
+ */
 export interface ResumeAnalysisResult {
   analysisText: string;
   strengths: string[];
   weaknesses: string[];
   suggestions: string[];
-  jobFit: string;
+  jobFit: 'low' | 'medium' | 'high';
   score: number;
-  matchPercentage: number;
-  keySkills: string[];
-  missingSkills: string[];
-  keywords: string[];
-  summary: string;
 }
 
-export interface AnswerEvaluation {
-  feedback: string;
-  score: number;
-  strengths: string[];
-  areas_for_improvement: string[];
-}
-
-export const generateInterviewQuestion = async (
-  roleType: string,
-  category: string,
-  previousQuestions: string[],
-  previousAnswer?: string,
-  customPrompt?: string
-): Promise<string> => {
+export async function analyzeResume(resumeText: string): Promise<ResumeAnalysisResult> {
   try {
-    console.log("Generating interview question for:", roleType, category);
-    
-    // Hardcoded API key for demonstration (in a real app, this would be stored securely)
-    const API_KEY = "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";
-    
-    // Try to use the API key to generate a question
-    try {
-      // Use `let` instead of `const` to allow modification
-      let systemPrompt = `You are an expert technical interviewer for a ${roleType} position. Generate a challenging but fair question related to ${category}.`;
-      
-      // If we have a custom prompt, use that instead
-      if (customPrompt && customPrompt.trim()) {
-        systemPrompt = customPrompt;
-      }
-      
-      // If we have a previous answer, include feedback in the system prompt
-      if (previousAnswer) {
-        systemPrompt += `\n\nThe candidate's previous answer was: "${previousAnswer}"\n\nProvide brief feedback on the answer, then ask a follow-up or new question. Be conversational and acknowledge what they said.`;
-      }
-      
-      const response = await fetch('https://api.openai.com/v1/chat/completions', {
-        method: 'POST',
-        headers: {
-          'Content-Type': 'application/json',
-          'Authorization': `Bearer ${API_KEY}`
-        },
-        body: JSON.stringify({
-          model: 'gpt-4o-mini',
-          messages: [
-            {
-              role: 'system',
-              content: systemPrompt + `\n\nPrevious questions that have been asked (DO NOT repeat these):\n${previousQuestions.join("\n")}`
-            },
-            {
-              role: 'user',
-              content: `Generate a new ${category} interview question for a ${roleType} position. Make it a detailed, technical question that would be appropriate in a real interview.`
-            }
-          ],
-          temperature: 0.7,
-          max_tokens: 500
-        })
-      });
+    const response = await fetch('https://api.openai.com/v1/chat/completions', {
+      method: 'POST',
+      headers: {
+        'Authorization': `Bearer ${OPENAI_API_KEY}`,
+        'Content-Type': 'application/json'
+      },
+      body: JSON.stringify({
+        model: 'gpt-4o-mini',
+        messages: [
+          {
+            role: 'system',
+            content: 'You are a professional resume reviewer who provides detailed, constructive feedback on resumes. Your analysis should be thorough, specific, and actionable.'
+          },
+          {
+            role: 'user',
+            content: `Please analyze this resume and provide detailed feedback. Include: 
+            1. An overall score out of 100 
+            2. Key strengths (list at least 3)
+            3. Areas for improvement (list at least 3)
+            4. Specific suggestions for enhancing the resume (list at least 3)
+            5. Job fit assessment (low, medium, or high)
+            
+            Format your response with clear section headers for:
+            - Strengths:
+            - Weaknesses:
+            - Suggestions:
+            - Job Fit:
+            - Score:
+            
+            Resume text:
+            ${resumeText}`
+          }
+        ],
+        temperature: 0.7
+      })
+    });
 
-      const data = await response.json();
-      if (data.error) {
-        throw new Error(data.error.message || "Error from OpenAI API");
-      }
-      
-      return data.choices[0].message.content;
-    } catch (apiError) {
-      console.error("API error:", apiError);
-      // Fall back to generating a predefined question if the API call fails
-      return getFallbackQuestion(roleType, category);
+    if (!response.ok) {
+      throw new Error('Failed to analyze resume');
+    }
+
+    const data = await response.json();
+    const analysisText = data.choices[0].message.content;
+    
+    // Parse the analysis to extract structured data
+    const strengths: string[] = [];
+    const weaknesses: string[] = [];
+    const suggestions: string[] = [];
+    let jobFit: 'low' | 'medium' | 'high' = 'medium';
+    let score = 70; // Default score
+    
+    // Extract strengths
+    if (analysisText.includes('Strengths:')) {
+      const strengthsSection = analysisText.split('Strengths:')[1].split(/Weaknesses:|Areas for Improvement:/)[0];
+      const strengthItems = strengthsSection.split(/\n+/).filter(item => item.trim().startsWith('-'));
+      strengthItems.forEach(item => {
+        const cleaned = item.replace(/^-\s*/, '').trim();
+        if (cleaned) strengths.push(cleaned);
+      });
     }
     
-  } catch (error) {
-    console.error("Error generating question:", error);
-    return getFallbackQuestion(roleType, category);
-  }
-};
-
-export const evaluateAnswer = async (
-  question: string,
-  answer: string,
-  roleType: string,
-  category: string
-): Promise<AnswerEvaluation> => {
-  try {
-    console.log("Evaluating answer for:", roleType, category);
-    
-    // Hardcoded API key for demonstration (in a real app, this would be stored securely)
-    const API_KEY = "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";
-    
-    // Try to use the API key to evaluate the answer
-    try {
-      const response = await fetch('https://api.openai.com/v1/chat/completions', {
-        method: 'POST',
-        headers: {
-          'Content-Type': 'application/json',
-          'Authorization': `Bearer ${API_KEY}`
-        },
-        body: JSON.stringify({
-          model: 'gpt-4o-mini',
-          messages: [
-            {
-              role: 'system',
-              content: `You are an expert technical interviewer for a ${roleType} position. Evaluate the candidate's answer to the question and provide constructive feedback. 
-              
-              Return the evaluation as a JSON object with this structure:
-              {
-                "feedback": "detailed feedback text",
-                "score": a number from 1-10 representing the quality of the answer,
-                "strengths": ["strength1", "strength2", ...],
-                "areas_for_improvement": ["area1", "area2", ...]
-              }`
-            },
-            {
-              role: 'user',
-              content: `Question: ${question}\n\nCandidate's Answer: ${answer}\n\nPlease evaluate this answer.`
-            }
-          ],
-          temperature: 0.5,
-          response_format: { type: "json_object" }
-        })
+    // Extract weaknesses
+    const weaknessesRegex = /Weaknesses:|Areas for Improvement:|Areas to Improve:/;
+    if (analysisText.match(weaknessesRegex)) {
+      const weaknessesSection = analysisText.split(weaknessesRegex)[1].split(/Suggestions:|Recommendations:/)[0];
+      const weaknessItems = weaknessesSection.split(/\n+/).filter(item => item.trim().startsWith('-'));
+      weaknessItems.forEach(item => {
+        const cleaned = item.replace(/^-\s*/, '').trim();
+        if (cleaned) weaknesses.push(cleaned);
       });
-
-      const data = await response.json();
-      if (data.error) {
-        throw new Error(data.error.message || "Error from OpenAI API");
-      }
-      
-      const parsedResult = JSON.parse(data.choices[0].message.content) as AnswerEvaluation;
-      return parsedResult;
-    } catch (apiError) {
-      console.error("API error:", apiError);
-      // Fall back to a mock evaluation if the API call fails
-      return getFallbackEvaluation(question, answer);
     }
     
+    // Extract suggestions
+    const suggestionsRegex = /Suggestions:|Recommendations:/;
+    if (analysisText.match(suggestionsRegex)) {
+      const suggestionsSection = analysisText.split(suggestionsRegex)[1].split(/Overall Assessment:|Score:|Job Fit:/)[0];
+      const suggestionItems = suggestionsSection.split(/\n+/).filter(item => item.trim().startsWith('-'));
+      suggestionItems.forEach(item => {
+        const cleaned = item.replace(/^-\s*/, '').trim();
+        if (cleaned) suggestions.push(cleaned);
+      });
+    }
+    
+    // Extract score
+    if (analysisText.includes('Score:')) {
+      const scoreMatch = analysisText.match(/Score:\s*(\d+)/i);
+      if (scoreMatch && scoreMatch[1]) {
+        score = parseInt(scoreMatch[1], 10);
+        if (score < 1) score = 1;
+        if (score > 100) score = 100;
+      }
+    }
+    
+    // Extract job fit
+    if (analysisText.toLowerCase().includes('job fit:')) {
+      const jobFitLower = analysisText.toLowerCase();
+      if (jobFitLower.includes('high') || jobFitLower.includes('strong') || jobFitLower.includes('excellent')) {
+        jobFit = 'high';
+      } else if (jobFitLower.includes('low') || jobFitLower.includes('poor') || jobFitLower.includes('weak')) {
+        jobFit = 'low';
+      } else {
+        jobFit = 'medium';
+      }
+    }
+    
+    // Default values if parsing failed
+    if (strengths.length === 0) strengths.push('Clear presentation of skills');
+    if (weaknesses.length === 0) weaknesses.push('Could be more concise');
+    if (suggestions.length === 0) suggestions.push('Add more quantifiable achievements');
+    
+    return {
+      analysisText,
+      strengths,
+      weaknesses,
+      suggestions,
+      jobFit,
+      score
+    };
   } catch (error) {
-    console.error("Error evaluating answer:", error);
-    return getFallbackEvaluation(question, answer);
+    console.error('Error analyzing resume:', error);
+    throw error;
   }
-};
-
-// Helper function to get a fallback question if API call fails
-function getFallbackQuestion(roleType: string, category: string): string {
-  const fallbackQuestions = {
-    algorithms: [
-      "Explain how you would implement a function to determine if a string is a palindrome. What's the time and space complexity of your solution?",
-      "How would you detect a cycle in a linked list?",
-      "Describe how you would implement a binary search tree and the basic operations."
-    ],
-    "system-design": [
-      "How would you design a URL shortening service like bit.ly?",
-      "Explain how you would architect a real-time chat application.",
-      "Design a distributed cache system."
-    ],
-    behavioral: [
-      "Tell me about a time you had to deal with a difficult team member.",
-      "Describe a situation where you had to meet a tight deadline.",
-      "Give an example of a time you had to make a difficult decision."
-    ],
-    "language-specific": [
-      "Explain the event loop in JavaScript and how asynchronous operations work.",
-      "What are some new features in ES6+ that you find most useful?",
-      "Describe the differences between var, let, and const in JavaScript."
-    ]
-  };
-
-  // Default to general questions if category is not found
-  const categoryKey = Object.keys(fallbackQuestions).find(key => 
-    category.toLowerCase().includes(key.toLowerCase())
-  ) || 'behavioral';
-  
-  const questions = fallbackQuestions[categoryKey as keyof typeof fallbackQuestions];
-  return questions[Math.floor(Math.random() * questions.length)];
 }
 
-// Helper function to get a fallback evaluation if API call fails
-function getFallbackEvaluation(question: string, answer: string): AnswerEvaluation {
-  // Determine a fake score based on answer length as a simple heuristic
-  const wordCount = answer.split(/\s+/).length;
-  const score = Math.min(Math.max(Math.floor(wordCount / 10), 4), 9);
+/**
+ * Helper function to extract list items from a section of text
+ */
+function extractListSection(text: string, startMarker: string, endMarker: string): string[] | null {
+  if (!text.includes(startMarker)) return null;
   
-  return {
-    feedback: "Your answer showed understanding of the core concepts, but could benefit from more specific examples and deeper technical explanation.",
-    score: score,
-    strengths: [
-      "Addressed the main parts of the question",
-      "Logical structure to the response"
-    ],
-    areas_for_improvement: [
-      "Could provide more specific technical details",
-      "Would benefit from concrete examples",
-      "Consider discussing performance implications"
-    ]
-  };
-}
-
-export function getChatCompletion(messages: { role: 'system' | 'user' | 'assistant'; content: string }[]): Promise<string> {
-  return new Promise(async (resolve, reject) => {
-    try {
-      // Hardcoded API key for demonstration (in a real app, this would be stored securely)
-      const API_KEY = "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";
-      
-      const response = await fetch('https://api.openai.com/v1/chat/completions', {
-        method: 'POST',
-        headers: {
-          'Content-Type': 'application/json',
-          'Authorization': `Bearer ${API_KEY}`
-        },
-        body: JSON.stringify({
-          model: 'gpt-4o-mini',
-          messages: messages,
-          temperature: 0.7,
-          max_tokens: 800
-        })
-      });
-
-      const data = await response.json();
-      if (data.error) {
-        throw new Error(data.error.message || "Error from OpenAI API");
-      }
-      
-      resolve(data.choices[0].message.content);
-    } catch (error) {
-      console.error("Error getting chat completion:", error);
-      
-      // Return a fallback response
-      resolve("I couldn't process that request. Let's continue with our conversation.");
-    }
-  });
+  const startIndex = text.indexOf(startMarker) + startMarker.length;
+  const endIndex = text.includes(endMarker) ? text.indexOf(endMarker) : text.length;
+  
+  if (startIndex >= endIndex) return null;
+  
+  const sectionText = text.substring(startIndex, endIndex).trim();
+  const items = sectionText.split(/\n+/)
+    .map(line => line.trim())
+    .filter(line => line.startsWith('-') || line.startsWith('•'))
+    .map(line => line.replace(/^[-•]\s*/, '').trim())
+    .filter(line => line.length > 0);
+  
+  return items.length > 0 ? items : null;
 }

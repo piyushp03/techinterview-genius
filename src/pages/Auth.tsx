@@ -1,3 +1,4 @@
+
 import { useState, useEffect } from 'react';
 import { useNavigate, useSearchParams } from 'react-router-dom';
 import { useAuth } from '@/context/AuthContext';
@@ -6,9 +7,7 @@ import { Input } from '@/components/ui/input';
 import { Card, CardContent, CardDescription, CardFooter, CardHeader, CardTitle } from '@/components/ui/card';
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs';
 import { Label } from '@/components/ui/label';
-import { CheckCircle, Mail, AlertCircle, Check, X, Info } from 'lucide-react';
-import { toast } from 'sonner';
-import { Alert, AlertDescription, AlertTitle } from '@/components/ui/alert';
+import { CheckCircle, Mail } from 'lucide-react';
 
 const Auth = () => {
   const { login, register, loginAsGuest, isLoading } = useAuth();
@@ -21,26 +20,6 @@ const Auth = () => {
   
   const pendingConfirmation = searchParams.get('pendingConfirmation') === 'true';
   const confirmation = searchParams.get('confirmation') === 'true';
-
-  // Password validation state
-  const [passwordValidation, setPasswordValidation] = useState({
-    minLength: false,
-    hasNumber: false,
-    hasSpecial: false,
-    hasUppercase: false,
-  });
-
-  // Validate password on change
-  useEffect(() => {
-    setPasswordValidation({
-      minLength: password.length >= 8,
-      hasNumber: /\d/.test(password),
-      hasSpecial: /[!@#$%^&*(),.?":{}|<>]/.test(password),
-      hasUppercase: /[A-Z]/.test(password),
-    });
-  }, [password]);
-
-  const isPasswordValid = Object.values(passwordValidation).every(Boolean);
 
   useEffect(() => {
     // If user was redirected back after confirmation, show confirmation success
@@ -60,13 +39,6 @@ const Auth = () => {
 
   const handleRegister = async (e: React.FormEvent) => {
     e.preventDefault();
-    
-    // Validate password before registration
-    if (!isPasswordValid) {
-      toast.error('Please ensure your password meets all requirements');
-      return;
-    }
-    
     try {
       await register(name, email, password);
     } catch (error) {
@@ -76,11 +48,9 @@ const Auth = () => {
 
   const handleGuestLogin = async () => {
     try {
-      await loginAsGuest();
-      navigate('/dashboard');
+      loginAsGuest();
     } catch (error) {
       console.error('Guest login error:', error);
-      toast.error('Failed to login as guest. Please try again.');
     }
   };
 
@@ -218,53 +188,8 @@ const Auth = () => {
                       onChange={(e) => setPassword(e.target.value)}
                       required
                     />
-                    
-                    <Alert className="mt-2" variant="outline">
-                      <Info className="h-4 w-4" />
-                      <AlertTitle>Password Requirements</AlertTitle>
-                      <AlertDescription>
-                        <ul className="space-y-1 mt-2">
-                          <li className="flex items-center text-xs">
-                            {passwordValidation.minLength ? (
-                              <Check className="mr-2 h-3 w-3 text-green-500" />
-                            ) : (
-                              <X className="mr-2 h-3 w-3 text-red-500" />
-                            )}
-                            <span>Be at least 8 characters long</span>
-                          </li>
-                          <li className="flex items-center text-xs">
-                            {passwordValidation.hasNumber ? (
-                              <Check className="mr-2 h-3 w-3 text-green-500" />
-                            ) : (
-                              <X className="mr-2 h-3 w-3 text-red-500" />
-                            )}
-                            <span>Include at least one number</span>
-                          </li>
-                          <li className="flex items-center text-xs">
-                            {passwordValidation.hasSpecial ? (
-                              <Check className="mr-2 h-3 w-3 text-green-500" />
-                            ) : (
-                              <X className="mr-2 h-3 w-3 text-red-500" />
-                            )}
-                            <span>Include at least one special character (!@#$%^&*)</span>
-                          </li>
-                          <li className="flex items-center text-xs">
-                            {passwordValidation.hasUppercase ? (
-                              <Check className="mr-2 h-3 w-3 text-green-500" />
-                            ) : (
-                              <X className="mr-2 h-3 w-3 text-red-500" />
-                            )}
-                            <span>Include at least one uppercase letter</span>
-                          </li>
-                        </ul>
-                      </AlertDescription>
-                    </Alert>
                   </div>
-                  <Button 
-                    type="submit" 
-                    className="w-full" 
-                    disabled={isLoading || !isPasswordValid}
-                  >
+                  <Button type="submit" className="w-full" disabled={isLoading}>
                     {isLoading ? 'Creating account...' : 'Create Account'}
                   </Button>
                 </form>

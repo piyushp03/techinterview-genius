@@ -10,7 +10,7 @@ import { Button } from '@/components/ui/button';
 import { Progress } from '@/components/ui/progress';
 import { Maximize, Minimize, ArrowLeft, Clock, CheckSquare } from 'lucide-react';
 import { toast } from 'sonner';
-import { generateInterviewQuestion, evaluateAnswer, AnswerEvaluation } from '@/utils/openaiService';
+import { generateInterviewQuestion } from '@/utils/openaiService';
 
 const InterviewSession = () => {
   const { id } = useParams<{ id: string }>();
@@ -20,7 +20,6 @@ const InterviewSession = () => {
   const [messages, setMessages] = useState<any[]>([]);
   const [sessionData, setSessionData] = useState<any>(null);
   const [input, setInput] = useState('');
-  const [codeValue, setCodeValue] = useState('// Write your code here\n\n');
   const [isFullScreen, setIsFullScreen] = useState(false);
   const [isProcessing, setIsProcessing] = useState(false);
   const [activeTab, setActiveTab] = useState('chat');
@@ -34,87 +33,14 @@ const InterviewSession = () => {
       if (!id) return;
       
       try {
-        let userData = user;
-        
-        // Handle guest user case
-        if (!userData && localStorage.getItem('guestUser')) {
-          userData = JSON.parse(localStorage.getItem('guestUser')!);
-        }
-        
-        if (id.startsWith('guest-session')) {
-          // Guest session handling
-          const storedSession = localStorage.getItem(`interview_session_${id}`);
-          if (storedSession) {
-            const sessionData = JSON.parse(storedSession);
-            setSessionData(sessionData);
-            setTimeRemaining(sessionData.time_limit * 60);
-            setQuestionCount(sessionData.current_question_count || 0);
-            
-            // Check if there are stored messages for this session
-            const storedMessages = localStorage.getItem(`messages_${id}`);
-            if (storedMessages) {
-              setMessages(JSON.parse(storedMessages));
-            } else {
-              // Generate first question
-              await generateFirstQuestion({
-                role_type: sessionData.role_type,
-                language: sessionData.language,
-                category: sessionData.category,
-                custom_prompt: sessionData.custom_prompt
-              });
-            }
-            
-            setLoading(false);
-            return;
-          }
-        }
-        
-        // For registered users, fetch from Supabase
         const { data, error } = await supabase
           .from('interview_sessions')
           .select('*')
           .eq('id', id)
+          .eq('user_id', user?.id)
           .single();
         
-        if (error) {
-          console.error("Error fetching session:", error);
-          // For guest users, create session data locally using URL parameters
-          if (userData && userData.email === 'guest@example.com') {
-            const params = new URLSearchParams(window.location.search);
-            const role = params.get('role') || 'frontend';
-            const language = params.get('language') || 'javascript';
-            const category = params.get('category') || 'algorithms';
-            
-            // Create mock session data for guest
-            setSessionData({
-              id: id,
-              user_id: userData.id,
-              role_type: role,
-              language: language,
-              category: category,
-              questions_limit: 5,
-              time_limit: 30,
-              is_coding_enabled: true,
-              current_question_count: 0,
-              start_time: new Date().toISOString()
-            });
-            
-            setTimeRemaining(30 * 60);
-            setQuestionCount(0);
-            
-            // Generate first question for guest
-            await generateFirstQuestion({
-              role_type: role,
-              language: language,
-              category: category
-            });
-            
-            setLoading(false);
-            return;
-          } else {
-            throw error;
-          }
-        }
+        if (error) throw error;
         
         if (!data) {
           toast.error('Interview session not found');
@@ -200,39 +126,11 @@ const InterviewSession = () => {
         sessionData.role_type,
         sessionData.category,
         [],
-        undefined,
-        sessionData.custom_prompt
+        sessionData.resume_data,
       );
       
       const welcomeMessage = `Hello! I'll be your technical interviewer today. We'll focus on ${sessionData.category} questions for a ${sessionData.role_type} role using ${sessionData.language}.\n\n${initialQuestion}`;
       
-      // For guest users, store messages locally
-      if (id?.startsWith('guest-session')) {
-        const newMessage = {
-          id: `guest-msg-${Date.now()}`,
-          session_id: id,
-          is_bot: true,
-          content: welcomeMessage,
-          created_at: new Date().toISOString()
-        };
-        
-        setMessages([newMessage]);
-        setQuestionCount(1);
-        
-        // Save to localStorage
-        localStorage.setItem(`messages_${id}`, JSON.stringify([newMessage]));
-        
-        // Update session data
-        const updatedSession = {
-          ...sessionData,
-          current_question_count: 1
-        };
-        localStorage.setItem(`interview_session_${id}`, JSON.stringify(updatedSession));
-        
-        return;
-      }
-      
-      // For regular users, save to Supabase
       const { data, error } = await supabase
         .from('interview_messages')
         .insert({
@@ -251,24 +149,6 @@ const InterviewSession = () => {
     } catch (error: any) {
       console.error('Error generating first question:', error);
       toast.error('Failed to generate interview question');
-      
-      // Fallback for errors
-      const fallbackMessage = `Hello! I'll be your technical interviewer today. We'll focus on technical questions relevant to your experience.\n\nLet's start with a common question: Can you explain how you approach problem-solving in your development work? Please walk me through your typical process from understanding requirements to implementation.`;
-      
-      const newMessage = {
-        id: `fallback-msg-${Date.now()}`,
-        session_id: id,
-        is_bot: true,
-        content: fallbackMessage,
-        created_at: new Date().toISOString()
-      };
-      
-      setMessages([newMessage]);
-      setQuestionCount(1);
-      
-      if (id?.startsWith('guest-session')) {
-        localStorage.setItem(`messages_${id}`, JSON.stringify([newMessage]));
-      }
     } finally {
       setIsProcessing(false);
     }
@@ -279,99 +159,18 @@ const InterviewSession = () => {
     
     setIsProcessing(true);
     try {
-      // Add user message
-      const userMessageId = `msg-${Date.now()}`;
-      const userMessage = {
-        id: userMessageId,
-        session_id: id,
-        is_bot: false,
-        content,
-        created_at: new Date().toISOString()
-      };
-      
-      // Check if this is a guest session
-      if (id?.startsWith('guest-session')) {
-        setMessages(prev => [...prev, userMessage]);
-        setInput('');
-        
-        // Save messages to localStorage
-        localStorage.setItem(`messages_${id}`, JSON.stringify([...messages, userMessage]));
-        
-        // Check question limit
-        if (questionCount >= (sessionData?.questions_limit || 5)) {
-          const finalMessage = {
-            id: `final-msg-${Date.now()}`,
-            session_id: id,
-            is_bot: true,
-            content: "You've completed this interview! Thank you for your responses. You can now end the session to see your results.",
-            created_at: new Date().toISOString()
-          };
-          
-          setMessages(prev => [...prev, finalMessage]);
-          localStorage.setItem(`messages_${id}`, JSON.stringify([...messages, userMessage, finalMessage]));
-          
-          await endInterview();
-          return;
-        }
-        
-        // Generate AI response for guest
-        const previousQuestions = messages
-          .filter(msg => msg.is_bot)
-          .map(msg => msg.content);
-        
-        const previousAnswer = content;
-        
-        const aiResponse = await generateInterviewQuestion(
-          sessionData.role_type,
-          sessionData.category,
-          previousQuestions,
-          previousAnswer,
-          sessionData.custom_prompt
-        );
-        
-        const botMessage = {
-          id: `ai-msg-${Date.now()}`,
-          session_id: id,
-          is_bot: true,
-          content: aiResponse,
-          created_at: new Date().toISOString()
-        };
-        
-        setMessages(prev => [...prev, botMessage]);
-        
-        // Save updated messages
-        localStorage.setItem(`messages_${id}`, JSON.stringify([...messages, userMessage, botMessage]));
-        
-        // Update question count
-        const newQuestionCount = questionCount + 1;
-        setQuestionCount(newQuestionCount);
-        
-        // Update session data
-        const updatedSession = {
-          ...sessionData,
-          current_question_count: newQuestionCount
-        };
-        localStorage.setItem(`interview_session_${id}`, JSON.stringify(updatedSession));
-        
-        // Check if we've reached the question limit
-        if (newQuestionCount >= sessionData.questions_limit) {
-          setTimeout(() => {
-            endInterview();
-          }, 3000);
-        }
-        
-        return;
-      }
-      
-      // For regular users, save to Supabase
-      const { data: userMessageData, error: userError } = await supabase
+      const { data: userMessage, error: userError } = await supabase
         .from('interview_messages')
-        .insert(userMessage)
+        .insert({
+          session_id: id,
+          is_bot: false,
+          content,
+        })
         .select();
       
       if (userError) throw userError;
       
-      setMessages(prev => [...prev, userMessageData[0]]);
+      setMessages(prev => [...prev, userMessage[0]]);
       setInput('');
       
       const previousQuestions = messages
@@ -384,7 +183,7 @@ const InterviewSession = () => {
           .insert({
             session_id: id,
             is_bot: true,
-            content: "You've reached the end of this interview session. Thank you for your participation. Let me analyze your responses and provide you with feedback.",
+            content: "You've reached the end of this interview session. Thank you for your participation. You can go back to review your answers or end the session now.",
           })
           .select();
         
@@ -395,15 +194,11 @@ const InterviewSession = () => {
         return;
       }
       
-      // Get feedback on previous answer
-      const previousAnswer = content;
-      
       const aiResponse = await generateInterviewQuestion(
         sessionData.role_type,
         sessionData.category,
         previousQuestions,
-        previousAnswer,
-        sessionData.custom_prompt
+        sessionData.resume_data,
       );
       
       const { data: botMessage, error: botError } = await supabase
@@ -419,16 +214,8 @@ const InterviewSession = () => {
       
       setMessages(prev => [...prev, botMessage[0]]);
       
-      const newQuestionCount = questionCount + 1;
-      await updateQuestionCount(newQuestionCount);
-      setQuestionCount(newQuestionCount);
-      
-      // Check if we've reached the question limit
-      if (newQuestionCount >= sessionData.questions_limit) {
-        setTimeout(() => {
-          endInterview();
-        }, 3000);
-      }
+      await updateQuestionCount(questionCount + 1);
+      setQuestionCount(prev => prev + 1);
     } catch (error: any) {
       console.error('Error processing message:', error);
       toast.error('Failed to get AI response');
@@ -439,9 +226,6 @@ const InterviewSession = () => {
 
   const updateQuestionCount = async (count: number) => {
     try {
-      // Skip for guest users
-      if (id?.startsWith('guest-session')) return;
-      
       await supabase
         .from('interview_sessions')
         .update({ current_question_count: count })
@@ -453,80 +237,10 @@ const InterviewSession = () => {
 
   const endInterview = async () => {
     try {
-      // For guest users, redirect to results with local data
-      if (id?.startsWith('guest-session')) {
-        setIsCompleted(true);
-        
-        // Generate analysis for guest user
-        const userMessages = messages.filter(m => !m.is_bot).map(m => m.content);
-        const botMessages = messages.filter(m => m.is_bot).map(m => m.content);
-        
-        let analysis: AnswerEvaluation = {
-          feedback: "Unable to generate feedback at this time.",
-          score: 5,
-          strengths: ["Participation in the interview"],
-          areas_for_improvement: ["Consider revisiting the topics covered"]
-        };
-        
-        if (userMessages.length > 0) {
-          try {
-            analysis = await evaluateAnswer(
-              botMessages.join('\n\n'),
-              userMessages.join('\n\n'),
-              sessionData.role_type,
-              sessionData.category
-            );
-          } catch (error) {
-            console.error('Error generating analysis for guest:', error);
-          }
-        }
-        
-        // Store interview data in localStorage for results page
-        localStorage.setItem(`interview_result_${id}`, JSON.stringify({
-          sessionData: {
-            ...sessionData,
-            is_completed: true,
-            end_time: new Date().toISOString()
-          },
-          messages: messages,
-          analysis: analysis
-        }));
-        
-        if (timerRef.current) {
-          window.clearInterval(timerRef.current);
-        }
-        
-        toast.success('Interview session completed');
-        
-        // Redirect to results page
-        setTimeout(() => {
-          navigate(`/interview/results/${id}`);
-        }, 2000);
-        
-        return;
-      }
-      
-      // For regular users
       await supabase
         .from('interview_sessions')
         .update({ end_time: new Date().toISOString() })
         .eq('id', id);
-      
-      // Also save the code for coding interviews
-      if (sessionData?.is_coding_enabled && codeValue) {
-        try {
-          await supabase
-            .from('interview_messages')
-            .insert({
-              session_id: id,
-              is_bot: false,
-              content: `CODE_SUBMISSION: ${codeValue}`,
-              created_at: new Date().toISOString()
-            });
-        } catch (error) {
-          console.error('Error saving code submission:', error);
-        }
-      }
       
       setIsCompleted(true);
       
@@ -535,45 +249,6 @@ const InterviewSession = () => {
       }
       
       toast.success('Interview session completed');
-      
-      // Generate analysis and redirect
-      toast.success('Generating interview analysis...');
-      
-      try {
-        // Analyze the interview
-        const userMessages = messages.filter(m => !m.is_bot).map(m => m.content);
-        const botMessages = messages.filter(m => m.is_bot).map(m => m.content);
-        
-        if (userMessages.length > 0) {
-          const analysis = await evaluateAnswer(
-            botMessages.join('\n\n'),
-            userMessages.join('\n\n'),
-            sessionData.role_type,
-            sessionData.category
-          );
-          
-          // Save analysis
-          await supabase
-            .from('interview_analysis')
-            .insert({
-              session_id: id,
-              summary: {
-                strengths: analysis.strengths || [],
-                weaknesses: analysis.areas_for_improvement || [],
-                score: analysis.score || 0,
-                feedback: analysis.feedback || '',
-                recommendations: analysis.areas_for_improvement || []
-              }
-            });
-        }
-      } catch (error) {
-        console.error('Error generating analysis:', error);
-      }
-      
-      // Redirect to results page
-      setTimeout(() => {
-        navigate(`/interview/results/${id}`);
-      }, 2000);
     } catch (error: any) {
       console.error('Error ending interview:', error);
       toast.error('Failed to end interview session');
@@ -600,10 +275,6 @@ const InterviewSession = () => {
     if (!sessionData) return 0;
     const totalSeconds = sessionData.time_limit * 60;
     return Math.max(0, 100 - (timeRemaining / totalSeconds) * 100);
-  };
-
-  const handleCodeChange = (newCode: string) => {
-    setCodeValue(newCode);
   };
 
   if (loading) {
@@ -653,30 +324,24 @@ const InterviewSession = () => {
               <div className="flex items-center">
                 <CheckSquare className="text-green-500 mr-2 h-5 w-5" />
                 <div>
-                  <span className="text-sm font-medium mr-2">Questions: {questionCount}/{sessionData?.questions_limit || 5}</span>
+                  <span className="text-sm font-medium mr-2">Questions: {questionCount}/{sessionData?.questions_limit}</span>
                   <Progress value={progressPercentage()} className="w-40 h-2" />
                 </div>
               </div>
               <div>
                 {isCompleted ? (
-                  <Button 
-                    variant="outline" 
-                    onClick={() => navigate(`/interview/results/${id}`)}
-                  >
+                  <Button variant="outline" onClick={() => navigate('/history')}>
                     View Interview Results
                   </Button>
                 ) : (
-                  <Button 
-                    variant="outline" 
-                    onClick={endInterview}
-                  >
+                  <Button variant="outline" onClick={endInterview}>
                     End Interview
                   </Button>
                 )}
               </div>
             </div>
             
-            {(sessionData?.is_coding_enabled || true) ? (
+            {sessionData?.is_coding_enabled ? (
               <Tabs value={activeTab} onValueChange={setActiveTab} className="flex-1 flex flex-col">
                 <TabsList className="mx-4 mb-2">
                   <TabsTrigger value="chat">Interview Chat</TabsTrigger>
@@ -692,14 +357,11 @@ const InterviewSession = () => {
                     input={input}
                     setInput={setInput}
                     isCompleted={isCompleted}
-                    sessionId={id}
                   />
                 </TabsContent>
-                <TabsContent value="code" className="flex-1 p-4">
+                <TabsContent value="code" className="flex-1 flex">
                   <CodeEditor
-                    language={sessionData?.language?.toLowerCase() || 'javascript'}
-                    initialCode={codeValue}
-                    onChange={handleCodeChange}
+                    language={sessionData?.language || 'javascript'}
                     readOnly={isCompleted}
                   />
                 </TabsContent>
@@ -714,7 +376,6 @@ const InterviewSession = () => {
                 input={input}
                 setInput={setInput}
                 isCompleted={isCompleted}
-                sessionId={id}
               />
             )}
           </div>

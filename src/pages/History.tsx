@@ -11,19 +11,12 @@ import { History as HistoryIcon, Calendar, ChevronRight, Trash2, Clock, CheckCir
 import { toast } from 'sonner';
 import { format } from 'date-fns';
 import { Progress } from '@/components/ui/progress';
-import { AlertDialog, AlertDialogAction, AlertDialogCancel, AlertDialogContent, AlertDialogDescription, AlertDialogFooter, AlertDialogHeader, AlertDialogTitle, AlertDialogTrigger } from '@/components/ui/alert-dialog';
-import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogDescription } from '@/components/ui/dialog';
-import InterviewResultsDialog from '@/components/InterviewResultsDialog';
 
 const History = () => {
   const { user } = useAuth();
   const navigate = useNavigate();
   const [sessions, setSessions] = useState<any[]>([]);
   const [loading, setLoading] = useState(true);
-  const [error, setError] = useState<string | null>(null);
-  const [isErrorDialogOpen, setIsErrorDialogOpen] = useState(false);
-  const [selectedSessionId, setSelectedSessionId] = useState<string | null>(null);
-  const [isResultsDialogOpen, setIsResultsDialogOpen] = useState(false);
 
   useEffect(() => {
     fetchSessions();
@@ -33,7 +26,6 @@ const History = () => {
     if (!user) return;
     
     try {
-      setLoading(true);
       const { data, error } = await supabase
         .from('interview_sessions')
         .select('*')
@@ -45,60 +37,18 @@ const History = () => {
       setSessions(data || []);
     } catch (error: any) {
       console.error('Error fetching interview sessions:', error);
-      setError(error.message || 'Failed to load interview history');
-      setIsErrorDialogOpen(true);
-      
-      // Create some fallback data for testing
-      const fallbackSessions = [
-        {
-          id: "fallback-1",
-          role_type: "Frontend Developer",
-          category: "algorithms",
-          language: "JavaScript",
-          current_question_count: 4,
-          questions_limit: 5,
-          created_at: new Date().toISOString(),
-          start_time: new Date(Date.now() - 3600000).toISOString(),
-          end_time: new Date().toISOString(),
-        },
-        {
-          id: "fallback-2",
-          role_type: "Fullstack Developer",
-          category: "system-design",
-          language: "TypeScript",
-          current_question_count: 2,
-          questions_limit: 5,
-          created_at: new Date(Date.now() - 86400000).toISOString(),
-          start_time: new Date(Date.now() - 86400000).toISOString(),
-          end_time: null,
-        }
-      ];
-      
-      setSessions(fallbackSessions);
+      toast.error(error.message || 'Failed to load interview history');
     } finally {
       setLoading(false);
     }
   };
 
   const handleDeleteSession = async (id: string) => {
+    if (!confirm('Are you sure you want to delete this interview session?')) {
+      return;
+    }
+    
     try {
-      // First, delete related messages
-      const { error: messagesError } = await supabase
-        .from('interview_messages')
-        .delete()
-        .eq('session_id', id);
-        
-      if (messagesError) throw messagesError;
-      
-      // Delete any analysis
-      const { error: analysisError } = await supabase
-        .from('interview_analysis')
-        .delete()
-        .eq('session_id', id);
-        
-      if (analysisError) throw analysisError;
-      
-      // Finally, delete the session
       const { error } = await supabase
         .from('interview_sessions')
         .delete()
@@ -121,11 +71,6 @@ const History = () => {
       'system-design': 'bg-red-100 text-red-800',
       'behavioral': 'bg-teal-100 text-teal-800',
       'language-specific': 'bg-indigo-100 text-indigo-800',
-      'frontend': 'bg-blue-100 text-blue-800',
-      'backend': 'bg-green-100 text-green-800',
-      'fullstack': 'bg-amber-100 text-amber-800',
-      'voice-interview': 'bg-pink-100 text-pink-800',
-      'general': 'bg-slate-100 text-slate-800',
     };
     
     return categories[category] || 'bg-gray-100 text-gray-800';
@@ -137,10 +82,7 @@ const History = () => {
         status: 'Completed',
         icon: <CheckCircle className="h-4 w-4 text-green-500" />,
         buttonText: 'View Results',
-        action: () => {
-          setSelectedSessionId(session.id);
-          setIsResultsDialogOpen(true);
-        },
+        action: () => navigate(`/interview/results/${session.id}`),
       };
     } else if (session.start_time) {
       return {
@@ -170,10 +112,7 @@ const History = () => {
     <div className="min-h-screen bg-background flex flex-col">
       <Navbar />
       <main className="flex-1 container py-8 px-4 md:px-6">
-        <div className="flex justify-between items-center mb-6">
-          <h1 className="text-3xl font-bold">Interview History</h1>
-          <Button onClick={() => navigate('/new-interview')}>Start New Interview</Button>
-        </div>
+        <h1 className="text-3xl font-bold mb-6">Interview History</h1>
         
         {loading ? (
           <div className="flex justify-center py-10">
@@ -186,7 +125,7 @@ const History = () => {
             <p className="text-muted-foreground mb-6">
               Start a new interview to begin tracking your practice sessions
             </p>
-            <Button onClick={() => navigate('/new-interview')}>
+            <Button onClick={() => navigate('/interview/new')}>
               Start New Interview
             </Button>
           </div>
@@ -194,15 +133,14 @@ const History = () => {
           <div className="grid gap-6 md:grid-cols-2 lg:grid-cols-3">
             {sessions.map((session) => {
               const { status, icon, buttonText, action } = getSessionStatusInfo(session);
-              const category = session.category || 'general';
               
               return (
                 <Card key={session.id} className="hover:shadow-md transition-shadow">
                   <CardHeader className="pb-2">
                     <div className="flex justify-between items-start">
                       <CardTitle>{session.role_type}</CardTitle>
-                      <Badge variant="outline" className={getCategoryColor(category)}>
-                        {category}
+                      <Badge variant="outline" className={getCategoryColor(session.category)}>
+                        {session.category}
                       </Badge>
                     </div>
                     <CardDescription className="flex items-center gap-1">
@@ -220,7 +158,7 @@ const History = () => {
                       <div className="space-y-1">
                         <div className="flex items-center justify-between text-sm">
                           <span>Progress:</span>
-                          <span>{session.current_question_count || 0}/{session.questions_limit || 5}</span>
+                          <span>{session.current_question_count || 0}/{session.questions_limit}</span>
                         </div>
                         <Progress value={calculateProgress(session)} className="h-2" />
                       </div>
@@ -234,34 +172,16 @@ const History = () => {
                     </div>
                   </CardContent>
                   <CardFooter className="flex justify-between">
-                    <AlertDialog>
-                      <AlertDialogTrigger asChild>
-                        <Button variant="ghost" size="icon">
-                          <Trash2 className="h-4 w-4 text-destructive" />
-                        </Button>
-                      </AlertDialogTrigger>
-                      <AlertDialogContent>
-                        <AlertDialogHeader>
-                          <AlertDialogTitle>Delete Interview Session</AlertDialogTitle>
-                          <AlertDialogDescription>
-                            Are you sure you want to delete this interview session? This action cannot be undone and all messages and analysis will be permanently deleted.
-                          </AlertDialogDescription>
-                        </AlertDialogHeader>
-                        <AlertDialogFooter>
-                          <AlertDialogCancel>Cancel</AlertDialogCancel>
-                          <AlertDialogAction
-                            onClick={(e) => {
-                              e.stopPropagation();
-                              handleDeleteSession(session.id);
-                            }}
-                            className="bg-destructive text-destructive-foreground hover:bg-destructive/90"
-                          >
-                            Delete
-                          </AlertDialogAction>
-                        </AlertDialogFooter>
-                      </AlertDialogContent>
-                    </AlertDialog>
-                    
+                    <Button 
+                      variant="ghost" 
+                      size="icon"
+                      onClick={(e) => {
+                        e.stopPropagation();
+                        handleDeleteSession(session.id);
+                      }}
+                    >
+                      <Trash2 className="h-4 w-4 text-destructive" />
+                    </Button>
                     <Button 
                       variant={session.end_time ? "default" : "outline"}
                       className="gap-1"
@@ -281,28 +201,6 @@ const History = () => {
           </div>
         )}
       </main>
-
-      <Dialog open={isErrorDialogOpen} onOpenChange={setIsErrorDialogOpen}>
-        <DialogContent>
-          <DialogHeader>
-            <DialogTitle>Error</DialogTitle>
-            <DialogDescription>
-              {error || 'An error occurred while loading the interview history.'}
-            </DialogDescription>
-          </DialogHeader>
-          <div className="flex justify-end">
-            <Button onClick={() => setIsErrorDialogOpen(false)}>
-              Dismiss
-            </Button>
-          </div>
-        </DialogContent>
-      </Dialog>
-
-      <InterviewResultsDialog 
-        open={isResultsDialogOpen} 
-        onOpenChange={setIsResultsDialogOpen} 
-        sessionId={selectedSessionId || undefined}
-      />
     </div>
   );
 };

@@ -1,13 +1,15 @@
 
 import React from 'react';
 
-export interface CodeEditorProps {
-  language?: string;
-  readOnly?: boolean;
-  initialCode?: string;
-  onChange?: (code: string) => void;
+declare module '@/components/CodeEditor' {
+  export interface CodeEditorProps {
+    language?: string;
+    readOnly?: boolean;
+    initialCode?: string;
+    onChange?: (code: string) => void;
+  }
+  
+  const CodeEditor: React.FC<CodeEditorProps>;
+  
+  export default CodeEditor;
 }
-
-declare const CodeEditor: React.FC<CodeEditorProps>;
-
-export default CodeEditor;
