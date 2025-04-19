@@ -1,125 +1,114 @@
 
-import React, { useState, useEffect } from 'react';
-import { EditorState } from '@codemirror/state';
-import { EditorView, keymap } from '@codemirror/view';
-import { indentWithTab } from '@codemirror/commands';
+import React, { useEffect, useRef, useState } from 'react';
+import { EditorView, basicSetup } from 'codemirror';
 import { javascript } from '@codemirror/lang-javascript';
 import { python } from '@codemirror/lang-python';
 import { java } from '@codemirror/lang-java';
 import { cpp } from '@codemirror/lang-cpp';
-import { css } from '@codemirror/lang-css';
-import { html } from '@codemirror/lang-html';
-import { json } from '@codemirror/lang-json';
-import { markdown } from '@codemirror/lang-markdown';
-import { rust } from '@codemirror/lang-rust';
-import { sql } from '@codemirror/lang-sql';
-import { xml } from '@codemirror/lang-xml';
-import { basicSetup } from 'codemirror';
+import { EditorState } from '@codemirror/state';
+import { Card, CardContent } from '@/components/ui/card';
 
-export interface CodeEditorProps {
-  language?: string;
+interface CodeEditorProps {
+  language: string;
+  initialCode: string;
+  onChange: (code: string) => void;
   readOnly?: boolean;
-  initialCode?: string;
-  onChange?: (code: string) => void;
 }
 
-const CodeEditor: React.FC<CodeEditorProps> = ({ 
-  language = 'javascript', 
-  readOnly = false, 
-  initialCode = '// Start coding here',
-  onChange 
+const CodeEditor: React.FC<CodeEditorProps> = ({
+  language = 'javascript',
+  initialCode = '',
+  onChange,
+  readOnly = false,
 }) => {
-  const [editorElement, setEditorElement] = useState<HTMLElement | null>(null);
-  const [editorView, setEditorView] = useState<EditorView | null>(null);
+  const editorRef = useRef<HTMLDivElement>(null);
+  const editorViewRef = useRef<EditorView | null>(null);
+  const [currentLanguage, setCurrentLanguage] = useState(language);
+  const [currentCode, setCurrentCode] = useState(initialCode);
 
   useEffect(() => {
-    if (!editorElement) return;
-
-    const languageExtension = getLanguageExtension(language);
-
-    const startState = EditorState.create({
-      doc: initialCode,
-      extensions: [
-        basicSetup,
-        keymap.of([indentWithTab]),
-        languageExtension,
-        EditorView.updateListener.of(update => {
-          if (update.changes && onChange) {
-            onChange(update.state.doc.toString());
-          }
-        }),
-        EditorView.theme({
-          "&": { height: "100%" },
-          ".cm-scroller": { overflow: "auto" }
-        }),
-        EditorState.readOnly.of(readOnly)
-      ]
-    });
-
-    const view = new EditorView({
-      state: startState,
-      parent: editorElement
-    });
-
-    setEditorView(view);
-
-    return () => {
-      view.destroy();
-    };
-  }, [editorElement, language, readOnly, initialCode, onChange]);
-
-  const getLanguageExtension = (lang: string) => {
-    switch (lang.toLowerCase()) {
-      case 'javascript':
-      case 'js':
-        return javascript();
-      case 'typescript':
-      case 'ts':
-        return javascript({ typescript: true });
-      case 'jsx':
-        return javascript({ jsx: true });
-      case 'tsx':
-        return javascript({ jsx: true, typescript: true });
-      case 'python':
-      case 'py':
-        return python();
-      case 'java':
-        return java();
-      case 'cpp':
-      case 'c++':
-        return cpp();
-      case 'css':
-        return css();
-      case 'html':
-        return html();
-      case 'json':
-        return json();
-      case 'markdown':
-      case 'md':
-        return markdown();
-      case 'rust':
-        return rust();
-      case 'sql':
-        return sql();
-      case 'xml':
-        return xml();
-      default:
-        return javascript();
+    if (currentLanguage !== language) {
+      setCurrentLanguage(language);
+      if (editorViewRef.current) {
+        editorViewRef.current.destroy();
+        editorViewRef.current = null;
+      }
     }
-  };
+  }, [language, currentLanguage]);
+
+  useEffect(() => {
+    if (initialCode !== currentCode) {
+      setCurrentCode(initialCode);
+    }
+  }, [initialCode]);
+
+  useEffect(() => {
+    if (editorRef.current && !editorViewRef.current) {
+      // Select the appropriate language extension
+      let langExtension;
+      switch (language) {
+        case 'python':
+          langExtension = python();
+          break;
+        case 'java':
+          langExtension = java();
+          break;
+        case 'cpp':
+          langExtension = cpp();
+          break;
+        case 'javascript':
+        default:
+          langExtension = javascript();
+          break;
+      }
+
+      // Create the editor state
+      const startState = EditorState.create({
+        doc: currentCode,
+        extensions: [
+          basicSetup,
+          langExtension,
+          EditorView.updateListener.of((update) => {
+            if (update.docChanged) {
+              const newCode = update.state.doc.toString();
+              setCurrentCode(newCode);
+              onChange(newCode);
+            }
+          }),
+          EditorView.theme({
+            "&": { height: "100%" },
+            ".cm-scroller": { overflow: "auto" },
+            ".cm-content, .cm-gutter": { minHeight: "100%" },
+            ".cm-gutters": { backgroundColor: "transparent", border: "none" },
+            ".cm-activeLineGutter": { backgroundColor: "rgba(0, 0, 0, 0.1)" },
+          }),
+          EditorView.editable.of(!readOnly),
+        ],
+      });
+
+      // Create the editor view
+      const view = new EditorView({
+        state: startState,
+        parent: editorRef.current,
+      });
+
+      editorViewRef.current = view;
+
+      return () => {
+        if (editorViewRef.current) {
+          editorViewRef.current.destroy();
+          editorViewRef.current = null;
+        }
+      };
+    }
+  }, [language, currentCode, editorRef.current, readOnly]);
 
   return (
-    <div className="h-full w-full border rounded-md overflow-hidden bg-background">
-      <div className="flex items-center justify-between px-4 py-2 border-b bg-muted/50">
-        <span className="text-sm font-medium">
-          {language.toUpperCase()} Editor {readOnly ? '(Read Only)' : ''}
-        </span>
-      </div>
-      <div 
-        ref={setEditorElement} 
-        className="h-[calc(100%-40px)] w-full overflow-auto"
-      />
-    </div>
+    <Card className="w-full h-full border-0 overflow-hidden">
+      <CardContent className="p-0 h-full">
+        <div ref={editorRef} className="h-full overflow-auto" />
+      </CardContent>
+    </Card>
   );
 };
 

@@ -5,7 +5,8 @@ import { useAuth } from '@/context/AuthContext';
 import { Card, CardContent, CardDescription, CardFooter, CardHeader, CardTitle } from '@/components/ui/card';
 import { Button } from '@/components/ui/button';
 import Navbar from '@/components/Navbar';
-import { Brain, MessageSquare, FileText, History, Settings, Mic } from 'lucide-react';
+import { Brain, MessageSquare, FileText, History, Settings, Mic, Code } from 'lucide-react';
+import DailyChallengeCard from '@/components/DailyChallengeCard';
 
 const Dashboard = () => {
   const { isAuthenticated, isLoading, user } = useAuth();
@@ -30,13 +31,19 @@ const Dashboard = () => {
       title: 'Interview Practice',
       description: 'Start a new mock interview with AI',
       icon: <Brain className="h-10 w-10 text-primary" />,
-      action: () => navigate('/interview/new'),
+      action: () => navigate('/new-interview'),
     },
     {
       title: 'AI Voice Interviewer',
       description: 'Practice with voice-based AI interviewer',
       icon: <Mic className="h-10 w-10 text-purple-500" />,
-      action: () => navigate('/ai-interviewer'),
+      action: () => navigate('/voice-interview'),
+    },
+    {
+      title: 'Daily Coding Challenge',
+      description: 'Solve the daily coding problem to improve skills',
+      icon: <Code className="h-10 w-10 text-blue-500" />,
+      action: () => navigate('/daily-challenge'),
     },
     {
       title: 'Custom Questions',
@@ -76,6 +83,10 @@ const Dashboard = () => {
         </header>
 
         <div className="grid gap-6 md:grid-cols-2 lg:grid-cols-3">
+          {/* Daily Challenge Card */}
+          <DailyChallengeCard />
+          
+          {/* Menu Items */}
           {menuItems.map((item, index) => (
             <Card key={index} className="transition-all hover:shadow-md">
               <CardHeader>

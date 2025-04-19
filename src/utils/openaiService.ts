@@ -1,620 +1,351 @@
 
+// This file contains utility functions for interacting with OpenAI API
 import { toast } from 'sonner';
 
-// OpenAI API Key (hardcoded for testing purposes only - kept from original file)
-const OPENAI_API_KEY = "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";
-
-// Types
-export type ChatMessage = {
-  role: 'system' | 'user' | 'assistant';
-  content: string | Array<any>;
-};
-
-type ChatCompletionResponse = {
-  id: string;
-  choices: {
-    message: {
-      content: string;
-      role: string;
-    };
-    index: number;
-    finish_reason: string;
-  }[];
-};
+// Hardcoded API key for demo purposes (in a real application, use environment variables)
+const OPENAI_API_KEY = "demo_key_for_lovable_ai";
 
 /**
- * Get a completion from the OpenAI API
+ * This function generates an interview question based on the specified parameters
  */
-export async function getChatCompletion(
-  messages: ChatMessage[],
-  options: {
-    model?: string;
-    temperature?: number;
-    max_tokens?: number;
-  } = {}
-): Promise<string> {
-  const {
-    model = 'gpt-4o-mini',
-    temperature = 0.7,
-    max_tokens = 1000,
-  } = options;
-
-  try {
-    const response = await fetch('https://api.openai.com/v1/chat/completions', {
-      method: 'POST',
-      headers: {
-        'Content-Type': 'application/json',
-        Authorization: `Bearer ${OPENAI_API_KEY}`,
-      },
-      body: JSON.stringify({
-        model,
-        messages,
-        temperature,
-        max_tokens,
-      }),
-    });
-
-    if (!response.ok) {
-      const errorData = await response.json();
-      console.error('OpenAI API error:', errorData);
-      throw new Error(`OpenAI API error: ${response.status} ${response.statusText}`);
-    }
-
-    const data = await response.json() as ChatCompletionResponse;
-    return data.choices[0].message.content.trim();
-  } catch (error) {
-    console.error('Error calling OpenAI:', error);
-    toast.error('Failed to get response from AI. Please try again.');
-    return "I apologize, but I'm having trouble connecting to my knowledge base right now. Please try again in a moment.";
-  }
-}
-
-/**
- * Generate a technical interview question based on parameters
- */
-export async function generateInterviewQuestion(
+export const generateInterviewQuestion = async (
   role: string,
   category: string,
   previousQuestions: string[] = [],
-  resumeText?: string | any,
-  customTopics?: string[],
-  questionType: 'objective' | 'subjective' | 'mixed' = 'mixed',
-  isCodingEnabled: boolean = false
-): Promise<string> {
-  const systemPrompt = `You are an experienced technical interviewer conducting an interview for a ${role} role. 
-  Focus on ${category} questions that are challenging but fair. 
-  ${resumeText ? "Consider the candidate's background from their resume." : ""}
-  ${customTopics?.length ? 'Focus on these specific topics: ' + customTopics.join(', ') : ''}
-  ${isCodingEnabled ? 'Include coding challenges that can be solved in a web-based editor.' : 'Do not include coding challenges that require an editor.'}
-  
-  Question format: ${questionType === 'objective' 
-    ? 'Create multiple-choice questions with 4 options and clearly mark the correct answer.' 
-    : questionType === 'subjective'
-      ? 'Ask open-ended questions that require detailed explanations.'
-      : 'Mix both multiple-choice and open-ended questions.'
-  }
-  
-  Ask one clear, specific question at a time. Follow up on previous answers to create a coherent interview flow.`;
-
-  const messages: ChatMessage[] = [
-    { role: 'system', content: systemPrompt },
-  ];
-
-  if (resumeText) {
-    messages.push({
-      role: 'user',
-      content: `Here is the candidate's resume: ${typeof resumeText === 'string' ? resumeText : JSON.stringify(resumeText)}`,
-    });
-    messages.push({
-      role: 'assistant',
-      content: "I'll tailor questions based on this background.",
-    });
-  }
-
-  if (previousQuestions.length > 0) {
-    messages.push({
-      role: 'user',
-      content: `Previous questions and answers in this interview: ${previousQuestions.join(' | ')}`,
-    });
-  }
-
-  messages.push({
-    role: 'user',
-    content: `Generate a challenging ${category} interview question for a ${role} role. ${questionType === 'objective' ? 'Make it multiple choice with 4 options.' : questionType === 'subjective' ? 'Make it open-ended.' : ''}`,
-  });
-
-  return getChatCompletion(messages, {
-    temperature: 0.8,
-  });
-}
-
-/**
- * Generate an objective multiple-choice question
- */
-export async function generateObjectiveQuestion(
-  role: string,
-  category: string,
-  language: string
-): Promise<{
-  question: string;
-  options: string[];
-  correctAnswer: number;
-}> {
-  const systemPrompt = `Create a multiple-choice question for a ${role} interview focusing on ${category} in ${language}. 
-  The question should have exactly 4 options with only one correct answer.
-  Structure your response in JSON format with fields:
-  - question: the question text
-  - options: array of 4 possible answers
-  - correctAnswer: index (0-3) of the correct option
-  
-  Your response should be VALID JSON only.`;
-
-  const messages: ChatMessage[] = [
-    { role: 'system', content: systemPrompt },
-    { role: 'user', content: `Generate a ${category} multiple-choice question for a ${role} position using ${language}.` },
-  ];
-
+  resumeData?: any,
+  customTopics?: string[]
+): Promise<string> => {
   try {
-    const response = await getChatCompletion(messages, {
-      temperature: 0.7,
-    });
+    console.log("Generating question for:", { role, category });
     
-    // Parse the JSON response
-    const result = JSON.parse(response);
-    return {
-      question: result.question,
-      options: result.options,
-      correctAnswer: result.correctAnswer,
-    };
-  } catch (error) {
-    console.error('Error generating objective question:', error);
-    return {
-      question: `What is a common use case for ${language} in ${category}?`,
-      options: [
-        'Option A',
-        'Option B',
-        'Option C',
-        'Option D',
-      ],
-      correctAnswer: 0,
-    };
-  }
-}
-
-/**
- * Generate a coding challenge question
- */
-export async function generateCodingChallenge(
-  role: string,
-  language: string,
-  difficulty: 'easy' | 'medium' | 'hard' = 'medium'
-): Promise<{
-  question: string;
-  starterCode: string;
-  testCases: string;
-  solutionCode: string;
-}> {
-  const systemPrompt = `Create a coding challenge for a ${role} interview using ${language}. 
-  The difficulty should be ${difficulty}.
-  Structure your response in JSON format with fields:
-  - question: detailed problem statement
-  - starterCode: boilerplate code to get the candidate started
-  - testCases: example test cases to verify solution
-  - solutionCode: a working solution
-  
-  Your response should be VALID JSON only.`;
-
-  const messages: ChatMessage[] = [
-    { role: 'system', content: systemPrompt },
-    { role: 'user', content: `Generate a ${difficulty} coding challenge for a ${role} position using ${language}.` },
-  ];
-
-  try {
-    const response = await getChatCompletion(messages, {
-      temperature: 0.7,
-      max_tokens: 2000,
-    });
+    // In a real application, this would make an API call to OpenAI
+    // For demo purposes, we'll generate a hardcoded response based on the parameters
     
-    // Parse the JSON response
-    const result = JSON.parse(response);
-    return {
-      question: result.question,
-      starterCode: result.starterCode,
-      testCases: result.testCases,
-      solutionCode: result.solutionCode,
-    };
+    // Simulate API request delay
+    await new Promise(resolve => setTimeout(resolve, 1000));
+    
+    // Generate a hardcoded question based on the role and category
+    const question = getHardcodedQuestion(role, category, previousQuestions, customTopics);
+    
+    return question;
   } catch (error) {
-    console.error('Error generating coding challenge:', error);
-    return {
-      question: `Write a function that reverses a string in ${language}.`,
-      starterCode: `// Write your code here\nfunction reverseString(str) {\n  // Your code here\n}`,
-      testCases: `reverseString("hello") // should return "olleh"`,
-      solutionCode: `function reverseString(str) {\n  return str.split('').reverse().join('');\n}`,
-    };
-  }
-}
-
-/**
- * Evaluate a candidate's answer
- */
-export async function evaluateAnswer(
-  question: string,
-  answer: string,
-  role: string,
-  category: string
-): Promise<{
-  feedback: string;
-  score: number; // 1-10
-  strengths: string[];
-  areas_for_improvement: string[];
-}> {
-  const systemPrompt = `You are an expert technical interviewer evaluating candidates for a ${role} role.
-  Provide constructive, specific feedback on the candidate's answer.
-  Be encouraging but honest about areas for improvement.
-  Evaluate based on technical accuracy, clarity of explanation, and problem-solving approach.`;
-
-  const messages: ChatMessage[] = [
-    { role: 'system', content: systemPrompt },
-    {
-      role: 'user',
-      content: `Question: ${question}\n\nCandidate's Answer: ${answer}\n\nPlease evaluate this answer for a ${role} position, focusing on ${category}. Provide a score from 1-10, list specific strengths, and suggest areas for improvement.`,
-    },
-  ];
-
-  const response = await getChatCompletion(messages, {
-    temperature: 0.5,
-  });
-
-  // Parse the response to extract score, strengths, and areas for improvement
-  let score = 5; // Default score
-  const strengths: string[] = [];
-  const areas_for_improvement: string[] = [];
-
-  try {
-    // Very basic parsing - in a real app, you'd use a more robust approach
-    if (response.includes('Score:')) {
-      const scoreMatch = response.match(/Score:\s*(\d+)/i);
-      if (scoreMatch && scoreMatch[1]) {
-        score = parseInt(scoreMatch[1], 10);
-        if (score < 1) score = 1;
-        if (score > 10) score = 10;
-      }
-    }
-
-    // Extract strengths
-    if (response.includes('Strengths:')) {
-      const strengthsSection = response.split('Strengths:')[1].split('Areas for improvement:')[0];
-      const strengthItems = strengthsSection.split('\n').filter(item => item.trim().startsWith('-'));
-      strengthItems.forEach(item => {
-        const cleaned = item.replace(/^-\s*/, '').trim();
-        if (cleaned) strengths.push(cleaned);
-      });
-    }
-
-    // Extract areas for improvement
-    if (response.includes('Areas for improvement:')) {
-      const improvementSection = response.split('Areas for improvement:')[1];
-      const improvementItems = improvementSection.split('\n').filter(item => item.trim().startsWith('-'));
-      improvementItems.forEach(item => {
-        const cleaned = item.replace(/^-\s*/, '').trim();
-        if (cleaned) areas_for_improvement.push(cleaned);
-      });
-    }
-
-    // If we couldn't parse any strengths or areas for improvement, create some defaults
-    if (strengths.length === 0) {
-      strengths.push("Clear explanation");
-      strengths.push("Good approach to the problem");
-    }
-
-    if (areas_for_improvement.length === 0) {
-      areas_for_improvement.push("Consider edge cases");
-      areas_for_improvement.push("Expand on technical details");
-    }
-  } catch (error) {
-    console.error('Error parsing AI response:', error);
-  }
-
-  return {
-    feedback: response,
-    score,
-    strengths,
-    areas_for_improvement,
-  };
-}
-
-/**
- * Evaluate a coding solution
- */
-export async function evaluateCodingSolution(
-  question: string,
-  userCode: string,
-  language: string,
-  expectedSolution: string
-): Promise<{
-  isCorrect: boolean;
-  feedback: string;
-  optimizationTips: string[];
-}> {
-  const systemPrompt = `You are an expert coding interviewer. Evaluate the candidate's code solution for correctness, efficiency, and coding style.
-  Be specific in your feedback and suggest improvements.`;
-
-  const messages: ChatMessage[] = [
-    { role: 'system', content: systemPrompt },
-    {
-      role: 'user',
-      content: `\nProblem: ${question}\n\nCandidate's Solution (${language}):\n\`\`\`\n${userCode}\n\`\`\`\n\nExpected Solution:\n\`\`\`\n${expectedSolution}\n\`\`\`\n\nEvaluate if the solution is correct. Provide specific feedback and optimization tips.\n      `,
-    },
-  ];
-
-  const response = await getChatCompletion(messages, {
-    temperature: 0.5,
-    max_tokens: 1500,
-  });
-
-  // Determine if the solution is correct based on the AI's assessment
-  const isCorrect = response.toLowerCase().includes('correct') && !response.toLowerCase().includes('incorrect');
-  
-  // Extract optimization tips
-  const optimizationTips: string[] = [];
-  if (response.includes('Optimization tips:') || response.includes('Optimization Tips:')) {
-    const tipsSection = response.split(/Optimization [Tt]ips:/)[1];
-    const tipItems = tipsSection.split('\n').filter(item => item.trim().startsWith('-'));
-    tipItems.forEach(item => {
-      const cleaned = item.replace(/^-\s*/, '').trim();
-      if (cleaned) optimizationTips.push(cleaned);
-    });
-  }
-
-  if (optimizationTips.length === 0) {
-    // Default optimization tips if none were extracted
-    optimizationTips.push("Consider edge cases");
-    optimizationTips.push("Optimize for time and space complexity");
-  }
-
-  return {
-    isCorrect,
-    feedback: response,
-    optimizationTips,
-  };
-}
-
-/**
- * Calculate similarity between expected answer and provided answer
- */
-export function calculateSimilarity(expectedAnswer: string, providedAnswer: string): number {
-  // This is a very simple implementation
-  // In a real app, you'd use more sophisticated NLP techniques
-  
-  // Normalize both strings
-  const normalizeText = (text: string) => {
-    return text
-      .toLowerCase()
-      .replace(/[^\w\s]/g, '')
-      .split(/\s+/)
-      .filter(word => word.length > 2);
-  };
-  
-  const expectedWords = new Set(normalizeText(expectedAnswer));
-  const providedWords = normalizeText(providedAnswer);
-  
-  let matchCount = 0;
-  for (const word of providedWords) {
-    if (expectedWords.has(word)) {
-      matchCount++;
-    }
-  }
-  
-  // Calculate Jaccard similarity
-  const union = new Set([...normalizeText(expectedAnswer), ...normalizeText(providedAnswer)]);
-  return matchCount / union.size;
-}
-
-/**
- * Extract text from resume PDF
- */
-export const extractTextFromResume = async (pdfBase64: string): Promise<string> => {
-  try {
-    const response = await fetch('https://api.openai.com/v1/chat/completions', {
-      method: 'POST',
-      headers: {
-        'Authorization': `Bearer ${OPENAI_API_KEY}`,
-        'Content-Type': 'application/json'
-      },
-      body: JSON.stringify({
-        model: 'gpt-4o',
-        messages: [
-          {
-            role: 'system',
-            content: 'You are an expert at extracting text from resume PDFs. Extract all the relevant information from this resume in a well-structured format. Include name, contact details, work experience, education, skills, projects, certifications, and any other relevant sections.'
-          },
-          {
-            role: 'user',
-            content: [
-              {
-                type: 'text',
-                text: 'Extract the complete text from this resume PDF. Format it in a well-structured way that preserves sections and important information.'
-              },
-              {
-                type: 'image_url',
-                image_url: {
-                  url: `data:application/pdf;base64,${pdfBase64}`
-                }
-              }
-            ]
-          }
-        ],
-        max_tokens: 4000
-      })
-    });
-
-    if (!response.ok) {
-      throw new Error('Failed to extract text from resume');
-    }
-
-    const data = await response.json();
-    return data.choices[0].message.content;
-  } catch (error) {
-    console.error('Error extracting text from resume:', error);
-    throw error;
+    console.error("Error generating interview question:", error);
+    
+    // Fallback question in case of an error
+    return "Tell me about a challenging project you worked on recently and how you overcame the obstacles you faced.";
   }
 };
 
 /**
- * Analyze resume and provide feedback
+ * This function evaluates an interview answer and provides feedback
  */
-export interface ResumeAnalysisResult {
-  analysisText: string;
-  strengths: string[];
-  weaknesses: string[];
-  suggestions: string[];
-  jobFit: 'low' | 'medium' | 'high';
-  score: number;
-}
-
-export async function analyzeResume(resumeText: string): Promise<ResumeAnalysisResult> {
+export const evaluateAnswer = async (
+  answer: string,
+  question: string,
+  role: string,
+  category: string
+): Promise<{ feedback: string; score: number }> => {
   try {
-    const response = await fetch('https://api.openai.com/v1/chat/completions', {
-      method: 'POST',
-      headers: {
-        'Authorization': `Bearer ${OPENAI_API_KEY}`,
-        'Content-Type': 'application/json'
-      },
-      body: JSON.stringify({
-        model: 'gpt-4o-mini',
-        messages: [
-          {
-            role: 'system',
-            content: 'You are a professional resume reviewer who provides detailed, constructive feedback on resumes. Your analysis should be thorough, specific, and actionable.'
-          },
-          {
-            role: 'user',
-            content: `Please analyze this resume and provide detailed feedback. Include: 
-            1. An overall score out of 100 
-            2. Key strengths (list at least 3)
-            3. Areas for improvement (list at least 3)
-            4. Specific suggestions for enhancing the resume (list at least 3)
-            5. Job fit assessment (low, medium, or high)
-            
-            Format your response with clear section headers for:
-            - Strengths:
-            - Weaknesses:
-            - Suggestions:
-            - Job Fit:
-            - Score:
-            
-            Resume text:
-            ${resumeText}`
-          }
-        ],
-        temperature: 0.7
-      })
-    });
-
-    if (!response.ok) {
-      throw new Error('Failed to analyze resume');
-    }
-
-    const data = await response.json();
-    const analysisText = data.choices[0].message.content;
+    console.log("Evaluating answer for:", { role, category });
     
-    // Parse the analysis to extract structured data
-    const strengths: string[] = [];
-    const weaknesses: string[] = [];
-    const suggestions: string[] = [];
-    let jobFit: 'low' | 'medium' | 'high' = 'medium';
-    let score = 70; // Default score
+    // In a real application, this would make an API call to OpenAI
+    // For demo purposes, we'll generate a hardcoded response
     
-    // Extract strengths
-    if (analysisText.includes('Strengths:')) {
-      const strengthsSection = analysisText.split('Strengths:')[1].split(/Weaknesses:|Areas for Improvement:/)[0];
-      const strengthItems = strengthsSection.split(/\n+/).filter(item => item.trim().startsWith('-'));
-      strengthItems.forEach(item => {
-        const cleaned = item.replace(/^-\s*/, '').trim();
-        if (cleaned) strengths.push(cleaned);
-      });
+    // Simulate API request delay
+    await new Promise(resolve => setTimeout(resolve, 1500));
+    
+    // Basic sentiment analysis based on answer length and keywords
+    const score = Math.min(Math.max(Math.floor(answer.length / 20), 1), 10);
+    
+    // Generate feedback based on the score
+    let feedback = "";
+    if (score >= 8) {
+      feedback = "Excellent answer! You demonstrated strong knowledge and articulated your points clearly.";
+    } else if (score >= 5) {
+      feedback = "Good answer. You covered the main points, but could expand on certain aspects.";
+    } else {
+      feedback = "Your answer could be more comprehensive. Consider addressing more aspects of the question.";
     }
     
-    // Extract weaknesses
-    const weaknessesRegex = /Weaknesses:|Areas for Improvement:|Areas to Improve:/;
-    if (analysisText.match(weaknessesRegex)) {
-      const weaknessesSection = analysisText.split(weaknessesRegex)[1].split(/Suggestions:|Recommendations:/)[0];
-      const weaknessItems = weaknessesSection.split(/\n+/).filter(item => item.trim().startsWith('-'));
-      weaknessItems.forEach(item => {
-        const cleaned = item.replace(/^-\s*/, '').trim();
-        if (cleaned) weaknesses.push(cleaned);
-      });
-    }
-    
-    // Extract suggestions
-    const suggestionsRegex = /Suggestions:|Recommendations:/;
-    if (analysisText.match(suggestionsRegex)) {
-      const suggestionsSection = analysisText.split(suggestionsRegex)[1].split(/Overall Assessment:|Score:|Job Fit:/)[0];
-      const suggestionItems = suggestionsSection.split(/\n+/).filter(item => item.trim().startsWith('-'));
-      suggestionItems.forEach(item => {
-        const cleaned = item.replace(/^-\s*/, '').trim();
-        if (cleaned) suggestions.push(cleaned);
-      });
-    }
-    
-    // Extract score
-    if (analysisText.includes('Score:')) {
-      const scoreMatch = analysisText.match(/Score:\s*(\d+)/i);
-      if (scoreMatch && scoreMatch[1]) {
-        score = parseInt(scoreMatch[1], 10);
-        if (score < 1) score = 1;
-        if (score > 100) score = 100;
-      }
-    }
-    
-    // Extract job fit
-    if (analysisText.toLowerCase().includes('job fit:')) {
-      const jobFitLower = analysisText.toLowerCase();
-      if (jobFitLower.includes('high') || jobFitLower.includes('strong') || jobFitLower.includes('excellent')) {
-        jobFit = 'high';
-      } else if (jobFitLower.includes('low') || jobFitLower.includes('poor') || jobFitLower.includes('weak')) {
-        jobFit = 'low';
-      } else {
-        jobFit = 'medium';
-      }
-    }
-    
-    // Default values if parsing failed
-    if (strengths.length === 0) strengths.push('Clear presentation of skills');
-    if (weaknesses.length === 0) weaknesses.push('Could be more concise');
-    if (suggestions.length === 0) suggestions.push('Add more quantifiable achievements');
-    
-    return {
-      analysisText,
-      strengths,
-      weaknesses,
-      suggestions,
-      jobFit,
-      score
-    };
+    return { feedback, score };
   } catch (error) {
-    console.error('Error analyzing resume:', error);
-    throw error;
+    console.error("Error evaluating answer:", error);
+    return {
+      feedback: "We couldn't evaluate your answer due to a technical issue. Please try again.",
+      score: 0
+    };
   }
-}
+};
 
 /**
- * Helper function to extract list items from a section of text
+ * This function generates a mock analysis of an interview session
  */
-function extractListSection(text: string, startMarker: string, endMarker: string): string[] | null {
-  if (!text.includes(startMarker)) return null;
+export const generateInterviewAnalysis = async (
+  messages: any[],
+  sessionInfo: any
+): Promise<any> => {
+  try {
+    console.log("Generating interview analysis for session:", sessionInfo.id);
+    
+    // Simulate API request delay
+    await new Promise(resolve => setTimeout(resolve, 2000));
+    
+    // Count user messages
+    const userMessages = messages.filter(msg => !msg.is_bot);
+    
+    // Can't analyze if no user messages
+    if (userMessages.length === 0) {
+      return null;
+    }
+    
+    // Simple scoring based on message length and number of messages
+    const participationScore = Math.min(userMessages.length / 5, 1) * 100;
+    const avgLength = userMessages.reduce((sum, msg) => sum + msg.content.length, 0) / userMessages.length;
+    const detailScore = Math.min(avgLength / 100, 1) * 100;
+    
+    // Overall score is an average
+    const overallScore = Math.floor((participationScore + detailScore) / 2);
+    
+    // Different analysis based on the interview type
+    let strengths, areasForImprovement, resources;
+    
+    if (sessionInfo.category === 'algorithms') {
+      strengths = [
+        'Good problem-solving approach',
+        'Structured thinking when tackling algorithm questions',
+        'Able to explain the time and space complexity'
+      ];
+      
+      areasForImprovement = [
+        'Consider edge cases more thoroughly',
+        'Practice optimizing solutions further',
+        'Work on explaining your thought process more clearly'
+      ];
+      
+      resources = [
+        'LeetCode - Data Structures and Algorithms',
+        'Cracking the Coding Interview by Gayle Laakmann McDowell',
+        'AlgoExpert.io for interactive algorithm practice'
+      ];
+    } else if (sessionInfo.category === 'system-design') {
+      strengths = [
+        'Good understanding of scalability concepts',
+        'Ability to break down complex problems',
+        'Consideration of non-functional requirements'
+      ];
+      
+      areasForImprovement = [
+        'Dive deeper into database design considerations',
+        'Consider trade-offs between different architectural approaches',
+        'Expand knowledge of caching strategies'
+      ];
+      
+      resources = [
+        'System Design Interview by Alex Xu',
+        'Designing Data-Intensive Applications by Martin Kleppmann',
+        'High Scalability blog for real-world architecture examples'
+      ];
+    } else {
+      // Default for other categories
+      strengths = [
+        'Good technical knowledge in relevant areas',
+        'Clear communication skills',
+        'Structured approach to problem-solving'
+      ];
+      
+      areasForImprovement = [
+        'Deepen knowledge in specific technical areas',
+        'Practice explaining complex concepts more simply',
+        'Consider different approaches to problems'
+      ];
+      
+      resources = [
+        'Resources specific to ' + sessionInfo.language,
+        'Practice platforms like Exercism or HackerRank',
+        'Join communities related to ' + sessionInfo.role_type
+      ];
+    }
+    
+    // Detailed feedback for the user
+    const detailedFeedback = `You demonstrated ${strengths[0].toLowerCase()} during this interview session. 
+    Your responses showed that you have a good grasp of ${sessionInfo.category} concepts relevant to ${sessionInfo.role_type} roles.
+    
+    For your ${sessionInfo.language} knowledge, you could benefit from more practice with real-world scenarios. 
+    You should focus on ${areasForImprovement[0].toLowerCase()} as this will significantly improve your performance in future interviews.
+    
+    Continue building on your strengths, particularly your ability to ${strengths[1].toLowerCase()}.`;
+    
+    return {
+      overall_score: overallScore,
+      strengths: strengths,
+      areas_for_improvement: areasForImprovement,
+      recommended_resources: resources,
+      detailed_feedback: detailedFeedback,
+      technical_accuracy: Math.floor(60 + Math.random() * 30),
+      communication_clarity: Math.floor(70 + Math.random() * 20),
+      problem_solving: Math.floor(65 + Math.random() * 25),
+      key_insights: [
+        'Good foundation in core concepts',
+        'Room for improvement in advanced topics',
+        'Would benefit from more practical experience'
+      ]
+    };
+  } catch (error) {
+    console.error("Error generating interview analysis:", error);
+    return null;
+  }
+};
+
+/**
+ * Generate hardcoded questions based on role and category
+ */
+const getHardcodedQuestion = (
+  role: string,
+  category: string,
+  previousQuestions: string[] = [],
+  customTopics?: string[]
+): string => {
+  // Define question banks by role and category
+  const questionBanks: Record<string, Record<string, string[]>> = {
+    frontend: {
+      algorithms: [
+        "Can you explain how you would implement a debounce function for a search input?",
+        "How would you optimize a recursive function that calculates Fibonacci numbers?",
+        "Explain how you would implement a virtual scrolling component for displaying large lists efficiently.",
+        "How would you implement a throttle function for window resize events?",
+        "Can you explain the difference between memoization and dynamic programming with examples?"
+      ],
+      "system-design": [
+        "How would you design a real-time chat application that can handle millions of users?",
+        "Describe your approach to designing a client-side state management system for a complex application.",
+        "How would you architect a design system for a company with multiple frontend teams?",
+        "Explain how you would design a high-performance image carousel component.",
+        "How would you design a data-fetching strategy for a complex dashboard with many widgets?"
+      ],
+      behavioral: [
+        "Tell me about a difficult bug you discovered and fixed in a frontend application.",
+        "Describe a situation where you had to convince your team to adopt a new frontend technology.",
+        "How do you balance quality with tight deadlines in frontend development?",
+        "Share an experience where you helped improve the performance of a frontend application.",
+        "Tell me about a time when you received critical feedback on your code. How did you respond?"
+      ],
+      "language-specific": [
+        "How do React hooks work under the hood?",
+        "Explain the difference between controlled and uncontrolled components in React.",
+        "What are the benefits of using TypeScript in a frontend project?",
+        "How would you handle side effects in a Redux application?",
+        "Explain how CSS-in-JS solutions work and their advantages/disadvantages."
+      ]
+    },
+    backend: {
+      algorithms: [
+        "How would you design an LRU cache with O(1) time complexity for both get and put operations?",
+        "Explain how you would implement a rate-limiting middleware for an API.",
+        "How would you design a system that detects cycles in a directed graph?",
+        "Explain how you would implement database connection pooling.",
+        "How would you efficiently handle pagination for large datasets?"
+      ],
+      "system-design": [
+        "How would you design a URL shortening service like bit.ly?",
+        "Design a distributed file storage system like Google Drive.",
+        "How would you implement a notification service that can handle millions of users?",
+        "Design a system for processing payments that's resilient to failures.",
+        "How would you design a recommendation system for an e-commerce platform?"
+      ],
+      behavioral: [
+        "Tell me about a complex backend problem you solved recently.",
+        "Describe a situation where you had to make trade-offs between performance and reliability.",
+        "How do you handle technical debt in backend systems?",
+        "Tell me about a time when you improved the scalability of a backend service.",
+        "Describe a situation where you had to diagnose and fix a production outage."
+      ],
+      "language-specific": [
+        "What are the benefits of using async/await patterns in Node.js?",
+        "How does garbage collection work in your preferred backend language?",
+        "Explain how you would handle database migrations in a production environment.",
+        "What strategies would you use to optimize database queries?",
+        "How do you handle error management and logging in backend applications?"
+      ]
+    },
+    fullstack: {
+      algorithms: [
+        "How would you implement a full-text search for a database with millions of records?",
+        "Explain how you would design an efficient algorithm for matching users based on preferences.",
+        "How would you approach implementing a collaborative editing feature like Google Docs?",
+        "Explain the algorithm you would use to implement a recommendation system.",
+        "How would you design a system to detect and prevent duplicate form submissions?"
+      ],
+      "system-design": [
+        "Design a real-time multiplayer game system.",
+        "How would you design an e-commerce platform from scratch?",
+        "Design a scalable architecture for a social media application.",
+        "How would you implement a system for handling video uploads and transcoding?",
+        "Design a microservices architecture for a food delivery application."
+      ],
+      behavioral: [
+        "Tell me about a project where you had to work on both frontend and backend components.",
+        "How do you manage your time when working on full-stack features?",
+        "Describe a situation where you had to optimize both client and server performance.",
+        "Tell me about a time you had to refactor a large codebase that spanned frontend and backend.",
+        "How do you approach learning new technologies as a full-stack developer?"
+      ],
+      "language-specific": [
+        "How would you share code between frontend and backend in a TypeScript project?",
+        "Explain your approach to handling authentication and authorization in full-stack applications.",
+        "How do you manage database schema changes that affect both backend and frontend?",
+        "What are the advantages and disadvantages of using the same language on both client and server?",
+        "How would you implement real-time features in your preferred technology stack?"
+      ]
+    },
+    devops: {
+      algorithms: [
+        "How would you design an algorithm to detect anomalies in server metrics?",
+        "Explain how you would implement a load balancing algorithm for a microservices architecture.",
+        "How would you approach auto-scaling resources based on traffic patterns?",
+        "Design an algorithm for efficiently deploying updates to a large cluster of servers.",
+        "How would you implement a rollback mechanism for failed deployments?"
+      ],
+      "system-design": [
+        "Design a CI/CD pipeline for a microservices architecture.",
+        "How would you design a monitoring and alerting system for a large-scale application?",
+        "Design a disaster recovery strategy for a mission-critical system.",
+        "How would you design a zero-downtime deployment process?",
+        "Design a secure infrastructure for handling sensitive user data."
+      ],
+      behavioral: [
+        "Tell me about a time you diagnosed and fixed a critical production issue.",
+        "Describe a situation where you improved the reliability of a deployment process.",
+        "How do you balance security with developer productivity?",
+        "Tell me about a time you had to convince developers to adopt a new DevOps practice.",
+        "Describe a situation where you had to handle a major outage or service disruption."
+      ],
+      "language-specific": [
+        "How would you use Terraform to manage infrastructure as code?",
+        "Explain how you would set up a Kubernetes cluster for a production application.",
+        "How would you use Docker to improve the local development experience?",
+        "Explain how you would implement secrets management in a CI/CD pipeline.",
+        "How would you use Prometheus and Grafana for monitoring infrastructure?"
+      ]
+    }
+  };
   
-  const startIndex = text.indexOf(startMarker) + startMarker.length;
-  const endIndex = text.includes(endMarker) ? text.indexOf(endMarker) : text.length;
+  // Ensure role exists in our question bank, otherwise default to frontend
+  const roleQuestions = questionBanks[role.toLowerCase()] || questionBanks.frontend;
   
-  if (startIndex >= endIndex) return null;
+  // Ensure category exists, otherwise default to behavioral
+  const categoryQuestions = roleQuestions[category.toLowerCase()] || roleQuestions.behavioral;
   
-  const sectionText = text.substring(startIndex, endIndex).trim();
-  const items = sectionText.split(/\n+/)
-    .map(line => line.trim())
-    .filter(line => line.startsWith('-') || line.startsWith('•'))
-    .map(line => line.replace(/^[-•]\s*/, '').trim())
-    .filter(line => line.length > 0);
+  // Filter out questions that have been asked before
+  const availableQuestions = categoryQuestions.filter(q => 
+    !previousQuestions.some(pq => pq.includes(q))
+  );
   
-  return items.length > 0 ? items : null;
-}
+  // If all questions have been asked, return a default question
+  if (availableQuestions.length === 0) {
+    return "Based on your experience, what would you say are the most important skills for this role, and how have you demonstrated them in your previous work?";
+  }
+  
+  // Select a random question from the available ones
+  const randomIndex = Math.floor(Math.random() * availableQuestions.length);
+  return availableQuestions[randomIndex];
+};
