@@ -220,9 +220,20 @@ export const InterviewProvider: React.FC<{ children: React.ReactNode }> = ({ chi
 
   const saveSessionToSupabase = async (sessionId: string, sessionData: any) => {
     try {
+      // For guest users, create a special user ID
+      const currentUser = (await supabase.auth.getUser()).data.user;
+      let userId = currentUser?.id;
+      
+      // If it's a guest user (no Supabase auth), use a local ID
+      if (!userId && sessionData.user?.id) {
+        userId = sessionData.user.id;
+      } else if (!userId) {
+        userId = `guest-${Date.now()}`;
+      }
+      
       const { error } = await supabase.from('interview_sessions').insert({
         id: sessionId,
-        user_id: (await supabase.auth.getUser()).data.user?.id,
+        user_id: userId,
         role_type: sessionData.role,
         language: sessionData.language,
         category: sessionData.category,
@@ -235,9 +246,11 @@ export const InterviewProvider: React.FC<{ children: React.ReactNode }> = ({ chi
       
       if (error) {
         console.error('Error saving session to Supabase:', error);
+        toast.error('Failed to save interview session. Continuing in offline mode.');
       }
     } catch (error) {
       console.error('Failed to save session to Supabase:', error);
+      toast.error('Failed to save interview session. Continuing in offline mode.');
     }
   };
 
@@ -278,6 +291,9 @@ export const InterviewProvider: React.FC<{ children: React.ReactNode }> = ({ chi
       if (error) {
         console.error('Error updating session in Supabase:', error);
       }
+      
+      // Redirect to results page
+      window.location.href = `/interview/results/${state.id}`;
     } catch (error) {
       console.error('Failed to update session in Supabase:', error);
     }
@@ -304,17 +320,63 @@ export const InterviewProvider: React.FC<{ children: React.ReactNode }> = ({ chi
     setIsProcessing(true);
 
     try {
+      // Get user's previous answer
+      const previousUserMessage = state.messages
+        .filter(msg => msg.role === 'user')
+        .pop()?.content;
+      
       // Extract previous questions to avoid repetition
       const previousQuestions = state.messages
         .filter(msg => msg.role === 'assistant')
         .map(msg => msg.content);
       
-      // Generate AI response using OpenAI
-      const aiResponse = await generateInterviewQuestion(
-        state.role,
-        state.category,
-        previousQuestions
-      );
+      // Get the question count
+      const questionCount = state.messages.filter(m => m.role === 'user').length;
+      
+      // Check if we've reached the question limit
+      if (questionCount >= 5) {
+        // Add completion message
+        const aiMessageId = `msg-${Date.now()}`;
+        
+        const completionMessage = "Thank you for completing the interview! I've collected enough responses to provide you with feedback. Let me summarize our discussion and give you some insights on your performance.";
+        
+        dispatch({
+          type: 'ADD_MESSAGE',
+          payload: {
+            role: 'assistant',
+            content: completionMessage,
+          },
+        });
+        
+        // Save AI message to Supabase
+        await saveMessageToSupabase(state.id, aiMessageId, {
+          role: 'assistant',
+          content: completionMessage
+        });
+        
+        // End the interview session and redirect to results
+        await endSession();
+        return;
+      }
+      
+      // Generate AI response using OpenAI with feedback on previous answer
+      let aiResponse;
+      if (previousUserMessage) {
+        // First provide feedback on the previous answer, then ask next question
+        aiResponse = await generateInterviewQuestion(
+          state.role,
+          state.category,
+          previousQuestions,
+          previousUserMessage // Pass the previous answer for feedback
+        );
+      } else {
+        // If there's no previous answer, just ask a question
+        aiResponse = await generateInterviewQuestion(
+          state.role,
+          state.category,
+          previousQuestions
+        );
+      }
       
       // Add AI response
       const aiMessageId = `msg-${Date.now()}`;
@@ -334,11 +396,11 @@ export const InterviewProvider: React.FC<{ children: React.ReactNode }> = ({ chi
       });
       
       // Update question count in Supabase
-      const questionCount = state.messages.filter(m => m.role === 'user').length + 1;
+      const newQuestionCount = questionCount + 1;
       await supabase
         .from('interview_sessions')
         .update({
-          current_question_count: questionCount,
+          current_question_count: newQuestionCount,
           updated_at: new Date().toISOString()
         })
         .eq('id', state.id);
@@ -347,13 +409,13 @@ export const InterviewProvider: React.FC<{ children: React.ReactNode }> = ({ chi
       console.error('Error getting AI response:', error);
       toast.error('Failed to get response from AI interviewer');
       
-      // Add a fallback response
+      // Add a fallback response with feedback
       const fallbackResponses = [
         "That's an interesting approach. Let's move on to another aspect of this topic. Can you explain how you would handle error cases in a similar scenario?",
-        "Thank you for that explanation. Now, I'd like to understand how you approach debugging complex issues in your codebase. Could you walk me through your process?",
-        "Good points. Let's shift gears a bit. Could you describe a challenging technical problem you've solved recently and how you approached it?",
-        "I appreciate your response. How would you ensure that your solution is scalable for larger datasets or user bases?",
-        "Interesting perspective. Now, could you explain how you would test this implementation to ensure it works correctly?"
+        "Thank you for that explanation. I can see you have a good grasp of the concepts. Now, I'd like to understand how you approach debugging complex issues in your codebase. Could you walk me through your process?",
+        "Good points. I appreciate the thoroughness of your answer. Let's shift gears a bit. Could you describe a challenging technical problem you've solved recently and how you approached it?",
+        "I appreciate your response. It shows you have experience with this topic. How would you ensure that your solution is scalable for larger datasets or user bases?",
+        "Interesting perspective. You've covered some important aspects there. Now, could you explain how you would test this implementation to ensure it works correctly?"
       ];
       
       const randomFallback = fallbackResponses[Math.floor(Math.random() * fallbackResponses.length)];

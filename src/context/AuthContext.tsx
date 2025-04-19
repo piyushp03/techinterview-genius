@@ -45,6 +45,14 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
       setIsLoading(false);
     });
 
+    // Check for guest user in local storage
+    const guestUser = localStorage.getItem('guestUser');
+    if (guestUser && !user) {
+      const parsedUser = JSON.parse(guestUser);
+      setUser(parsedUser);
+      setIsAuthenticated(true);
+    }
+
     return () => subscription.unsubscribe();
   }, []);
 
@@ -104,6 +112,9 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
     const guestUser = {
       id: `guest-${Date.now()}`,
       email: 'guest@example.com',
+      user_metadata: {
+        name: 'Guest User'
+      }
     } as User;
     
     setUser(guestUser);

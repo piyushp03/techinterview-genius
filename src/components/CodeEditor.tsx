@@ -14,14 +14,14 @@ interface CodeEditorProps {
 const CodeEditor: React.FC<CodeEditorProps> = ({
   language = 'javascript',
   readOnly = false,
-  initialCode = '',
+  initialCode = '// Write your code here',
   onChange
 }) => {
   const editorRef = useRef<HTMLDivElement>(null);
   const [code, setCode] = useState(initialCode);
   const [isEditing, setIsEditing] = useState(!readOnly);
   
-  const { view: editorView } = useCodeMirror({
+  const { view } = useCodeMirror({
     containerRef: editorRef,
     initialDoc: initialCode,
     onChange: (value) => {
@@ -37,13 +37,17 @@ const CodeEditor: React.FC<CodeEditorProps> = ({
       setCode(initialCode);
     }
   }, [initialCode]);
+
+  useEffect(() => {
+    setIsEditing(!readOnly);
+  }, [readOnly]);
   
   return (
-    <div className="border rounded-md overflow-hidden">
+    <div className="border rounded-md overflow-hidden h-full">
       {isEditing ? (
         <div
           ref={editorRef}
-          className="min-h-[200px] font-mono text-sm"
+          className="min-h-[200px] font-mono text-sm h-full"
           style={{ height: '100%' }}
         />
       ) : (
@@ -55,6 +59,7 @@ const CodeEditor: React.FC<CodeEditorProps> = ({
             padding: '1rem',
             borderRadius: '0.375rem',
             minHeight: '200px',
+            height: '100%',
             overflowX: 'auto'
           }}
         >
