@@ -1,4 +1,3 @@
-
 import React, { useState, useEffect, useRef } from 'react';
 import { useParams, useNavigate } from 'react-router-dom';
 import { useAuth } from '@/context/AuthContext';
@@ -444,7 +443,7 @@ const InterviewSession = () => {
             sessionData.category
           );
           
-          // Save analysis
+          // Save analysis - now properly typed as an object with the expected properties
           await supabase
             .from('interview_analysis')
             .insert({
@@ -454,7 +453,7 @@ const InterviewSession = () => {
                 weaknesses: analysis.weaknesses || [],
                 score: analysis.score || 0,
                 feedback: analysis.feedback || '',
-                recommendations: analysis.recommendations || []
+                recommendations: analysis.areas_for_improvement || [] // Note the field name change to match API response
               }
             });
         }

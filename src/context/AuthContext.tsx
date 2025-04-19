@@ -109,12 +109,17 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
   };
 
   const loginAsGuest = () => {
+    // Create a guest user object that conforms to the User type structure
+    // Cast to User since we're intentionally creating a simplified version
     const guestUser = {
       id: `guest-${Date.now()}`,
       email: 'guest@example.com',
+      app_metadata: {},
       user_metadata: {
         name: 'Guest User'
-      }
+      },
+      aud: 'guest',
+      created_at: new Date().toISOString()
     } as User;
     
     setUser(guestUser);

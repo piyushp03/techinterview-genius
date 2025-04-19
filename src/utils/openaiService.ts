@@ -1,4 +1,3 @@
-
 // Define the interface for resume analysis results
 export interface ResumeAnalysisResult {
   analysisText: string;
@@ -17,7 +16,8 @@ export interface ResumeAnalysisResult {
 export const generateInterviewQuestion = async (
   roleType: string,
   category: string,
-  previousQuestions: string[]
+  previousQuestions: string[],
+  previousAnswer?: string
 ): Promise<string> => {
   try {
     console.log("Generating interview question for:", roleType, category);
@@ -27,6 +27,13 @@ export const generateInterviewQuestion = async (
     
     // Try to use the API key to generate a question
     try {
+      const systemPrompt = `You are an expert technical interviewer for a ${roleType} position. Generate a challenging but fair question related to ${category}.`;
+      
+      // If we have a previous answer, include feedback in the system prompt
+      if (previousAnswer) {
+        systemPrompt += `\n\nThe candidate's previous answer was: "${previousAnswer}"\n\nProvide brief feedback on the answer, then ask a follow-up or new question. Be conversational and acknowledge what they said.`;
+      }
+      
       const response = await fetch('https://api.openai.com/v1/chat/completions', {
         method: 'POST',
         headers: {
@@ -38,10 +45,7 @@ export const generateInterviewQuestion = async (
           messages: [
             {
               role: 'system',
-              content: `You are an expert technical interviewer for a ${roleType} position. Generate a challenging but fair question related to ${category}. The question should be specific, technical, and designed to evaluate a candidate's knowledge and problem-solving skills.
-              
-              Previous questions that have been asked (DO NOT repeat these):
-              ${previousQuestions.join("\n")}`
+              content: systemPrompt + `\n\nPrevious questions that have been asked (DO NOT repeat these):\n${previousQuestions.join("\n")}`
             },
             {
               role: 'user',
@@ -76,7 +80,7 @@ export const evaluateAnswer = async (
   answer: string,
   roleType: string,
   category: string
-): Promise<string> => {
+): Promise<any> => {
   try {
     console.log("Evaluating answer for:", roleType, category);
     
@@ -121,16 +125,17 @@ export const evaluateAnswer = async (
         throw new Error(data.error.message || "Error from OpenAI API");
       }
       
-      return data.choices[0].message.content;
+      // Parse the response to get a proper object instead of a string
+      return JSON.parse(data.choices[0].message.content);
     } catch (apiError) {
       console.error("API error:", apiError);
       // Fall back to a mock evaluation if the API call fails
-      return JSON.stringify(getFallbackEvaluation(question, answer));
+      return getFallbackEvaluation(question, answer);
     }
     
   } catch (error) {
     console.error("Error evaluating answer:", error);
-    return JSON.stringify(getFallbackEvaluation(question, answer));
+    return getFallbackEvaluation(question, answer);
   }
 };
 
