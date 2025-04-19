@@ -13,6 +13,8 @@ export interface ResumeAnalysisResult {
   summary: string;
 }
 
+import { ResumeAnalysisResult } from './openaiService';
+
 export const generateInterviewQuestion = async (
   roleType: string,
   category: string,
@@ -27,7 +29,8 @@ export const generateInterviewQuestion = async (
     
     // Try to use the API key to generate a question
     try {
-      const systemPrompt = `You are an expert technical interviewer for a ${roleType} position. Generate a challenging but fair question related to ${category}.`;
+      // Use `let` instead of `const` to allow modification
+      let systemPrompt = `You are an expert technical interviewer for a ${roleType} position. Generate a challenging but fair question related to ${category}.`;
       
       // If we have a previous answer, include feedback in the system prompt
       if (previousAnswer) {
