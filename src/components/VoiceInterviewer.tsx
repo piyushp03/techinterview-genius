@@ -7,8 +7,8 @@ import { Textarea } from '@/components/ui/textarea';
 import { Avatar, AvatarFallback, AvatarImage } from '@/components/ui/avatar';
 import { ScrollArea } from '@/components/ui/scroll-area';
 import { Badge } from '@/components/ui/badge';
+import { getChatCompletion } from '@/utils/openaiService';
 import { toast } from 'sonner';
-import { supabase } from '@/integrations/supabase/client';
 import { formatDistanceToNow } from 'date-fns';
 import useSpeechRecognition from '@/hooks/useSpeechRecognition';
 
@@ -244,28 +244,18 @@ const VoiceInterviewer: React.FC<VoiceInterviewerProps> = ({
         content: userResponse
       });
 
-      // Generate AI response using edge function
-      const { data: functionData, error: functionError } = await supabase.functions.invoke('chat', {
-        body: {
-          messages: [
-            {
-              role: 'system',
-              content: `You are an AI interviewer for a ${role} position, focusing on ${category}. 
-              Evaluate the candidate's responses and ask follow-up questions. 
-              Be professional but conversational. 
-              Ask one question at a time. 
-              Your goal is to assess the candidate's knowledge and experience.`
-            },
-            ...messageHistory
-          ]
-        }
-      });
-
-      if (functionError) {
-        throw functionError;
-      }
-
-      const response = functionData.content;
+      // Generate AI response
+      const response = await getChatCompletion([
+        {
+          role: 'system' as const,
+          content: `You are an AI interviewer for a ${role} position, focusing on ${category}. 
+          Evaluate the candidate's responses and ask follow-up questions. 
+          Be professional but conversational. 
+          Ask one question at a time. 
+          Your goal is to assess the candidate's knowledge and experience.`
+        },
+        ...messageHistory
+      ]);
 
       // Add AI response to chat
       setMessages(prevMessages => [
@@ -309,31 +299,21 @@ const VoiceInterviewer: React.FC<VoiceInterviewerProps> = ({
         content: msg.content
       }));
 
-      // Generate a new question using edge function
-      const { data: functionData, error: functionError } = await supabase.functions.invoke('chat', {
-        body: {
-          messages: [
-            {
-              role: 'system',
-              content: `You are an AI interviewer for a ${role} position, focusing on ${category}. 
-              Generate a challenging technical question that would be appropriate for this interview.
-              The question should be specific and test the candidate's knowledge.
-              Do not include any preamble or explanation, just ask the question directly.`
-            },
-            ...messageHistory,
-            {
-              role: 'user',
-              content: 'Please ask me the next interview question.'
-            }
-          ]
+      // Generate a new question
+      const question = await getChatCompletion([
+        {
+          role: 'system' as const,
+          content: `You are an AI interviewer for a ${role} position, focusing on ${category}. 
+          Generate a challenging technical question that would be appropriate for this interview.
+          The question should be specific and test the candidate's knowledge.
+          Do not include any preamble or explanation, just ask the question directly.`
+        },
+        ...messageHistory,
+        {
+          role: 'user' as const,
+          content: 'Please ask me the next interview question.'
         }
-      });
-
-      if (functionError) {
-        throw functionError;
-      }
-
-      const question = functionData.content;
+      ]);
 
       // Add the question to the chat
       setMessages(prevMessages => [

@@ -1,6 +1,7 @@
 
 import React, { createContext, useContext, useState, useReducer, useEffect } from 'react';
 import { toast } from 'sonner';
+import { generateInterviewQuestion, evaluateAnswer } from '@/utils/openaiService';
 import { supabase } from '@/integrations/supabase/client';
 
 // Type definitions
@@ -167,30 +168,15 @@ export const InterviewProvider: React.FC<{ children: React.ReactNode }> = ({ chi
     // Add initial assistant message
     setIsProcessing(true);
     try {
-      // Generate the initial question using Lovable AI
-      const { data: functionData, error: functionError } = await supabase.functions.invoke('chat', {
-        body: {
-          messages: [
-            {
-              role: 'system',
-              content: `You are an AI interviewer for a ${selectedRole} position, focusing on ${selectedCategory} using ${selectedLanguage}. 
-              Generate a challenging technical question that would be appropriate for this interview.
-              The question should be specific and test the candidate's knowledge.
-              Do not include any preamble or explanation, just ask the question directly.`
-            },
-            {
-              role: 'user',
-              content: options.resumeText 
-                ? `Based on this resume: ${options.resumeText}\n\nPlease ask me the first interview question.`
-                : 'Please ask me the first interview question.'
-            }
-          ]
-        }
-      });
-
-      if (functionError) throw functionError;
+      // Generate the initial question using OpenAI
+      const initialQuestion = await generateInterviewQuestion(
+        selectedRole,
+        selectedCategory,
+        [],
+        options.resumeText,
+        options.customTopics
+      );
       
-      const initialQuestion = functionData.content;
       const welcomeMessage = `Hello! I'll be your technical interviewer today. We'll focus on ${selectedCategory} questions for a ${selectedRole} role using ${selectedLanguage}.\n\n${initialQuestion}`;
       
       const messageId = `msg-${Date.now()}`;
@@ -236,15 +222,17 @@ export const InterviewProvider: React.FC<{ children: React.ReactNode }> = ({ chi
 
   const saveSessionToSupabase = async (sessionId: string, sessionData: any) => {
     try {
-      const user = await supabase.auth.getUser();
       const { error } = await supabase.from('interview_sessions').insert({
         id: sessionId,
-        user_id: user.data.user?.id || 'guest',
-        role: sessionData.role,
+        user_id: (await supabase.auth.getUser()).data.user?.id,
+        role_type: sessionData.role,
         language: sessionData.language,
         category: sessionData.category,
-        difficulty: 'medium',
-        status: 'active'
+        questions_limit: 5,
+        time_limit: 30,
+        created_at: new Date().toISOString(),
+        updated_at: new Date().toISOString(),
+        start_time: new Date().toISOString()
       });
       
       if (error) {
@@ -260,9 +248,9 @@ export const InterviewProvider: React.FC<{ children: React.ReactNode }> = ({ chi
       const { error } = await supabase.from('interview_messages').insert({
         id: messageId,
         session_id: sessionId,
-        role: message.role,
+        is_bot: message.role === 'assistant',
         content: message.content,
-        timestamp: new Date().toISOString()
+        created_at: new Date().toISOString()
       });
       
       if (error) {
@@ -283,8 +271,9 @@ export const InterviewProvider: React.FC<{ children: React.ReactNode }> = ({ chi
       const { error } = await supabase
         .from('interview_sessions')
         .update({
-          status: 'completed',
-          duration: Math.floor((new Date().getTime() - state.startTime.getTime()) / 1000)
+          end_time: new Date().toISOString(),
+          updated_at: new Date().toISOString(),
+          current_question_count: state.messages.filter(m => m.role === 'user').length
         })
         .eq('id', state.id);
       
@@ -317,34 +306,19 @@ export const InterviewProvider: React.FC<{ children: React.ReactNode }> = ({ chi
     setIsProcessing(true);
 
     try {
-      // Generate AI response using Lovable AI
-      const messageHistory = state.messages.map(msg => ({
-        role: msg.role,
-        content: msg.content
-      }));
-
-      const { data: functionData, error: functionError } = await supabase.functions.invoke('chat', {
-        body: {
-          messages: [
-            {
-              role: 'system',
-              content: `You are an AI interviewer for a ${state.role} position, focusing on ${state.category}. 
-              Evaluate the candidate's response and ask the next relevant follow-up question.
-              Be professional but conversational. 
-              Ask one question at a time.`
-            },
-            ...messageHistory,
-            {
-              role: 'user',
-              content: content
-            }
-          ]
-        }
-      });
-
-      if (functionError) throw functionError;
+      // Extract previous questions to avoid repetition
+      const previousQuestions = state.messages
+        .filter(msg => msg.role === 'assistant')
+        .map(msg => msg.content);
       
-      const aiResponse = functionData.content;
+      // Generate AI response using OpenAI
+      const aiResponse = await generateInterviewQuestion(
+        state.role,
+        state.category,
+        previousQuestions,
+        state.resumeText,
+        state.customTopics
+      );
       
       // Add AI response
       const aiMessageId = `msg-${Date.now()}`;
@@ -363,10 +337,12 @@ export const InterviewProvider: React.FC<{ children: React.ReactNode }> = ({ chi
         content: aiResponse
       });
       
-      // Update session in Supabase
+      // Update question count in Supabase
+      const questionCount = state.messages.filter(m => m.role === 'user').length + 1;
       await supabase
         .from('interview_sessions')
         .update({
+          current_question_count: questionCount,
           updated_at: new Date().toISOString()
         })
         .eq('id', state.id);
