@@ -14,7 +14,290 @@ export type Database = {
   }
   public: {
     Tables: {
-      [_ in never]: never
+      daily_challenges: {
+        Row: {
+          category: string
+          created_at: string | null
+          date: string
+          description: string
+          difficulty: string
+          hints: string[] | null
+          id: string
+          question: string
+          solution: string | null
+          test_cases: Json | null
+          title: string
+        }
+        Insert: {
+          category: string
+          created_at?: string | null
+          date: string
+          description: string
+          difficulty: string
+          hints?: string[] | null
+          id?: string
+          question: string
+          solution?: string | null
+          test_cases?: Json | null
+          title: string
+        }
+        Update: {
+          category?: string
+          created_at?: string | null
+          date?: string
+          description?: string
+          difficulty?: string
+          hints?: string[] | null
+          id?: string
+          question?: string
+          solution?: string | null
+          test_cases?: Json | null
+          title?: string
+        }
+        Relationships: []
+      }
+      interview_messages: {
+        Row: {
+          content: string
+          id: string
+          role: string
+          session_id: string
+          timestamp: string | null
+        }
+        Insert: {
+          content: string
+          id?: string
+          role: string
+          session_id: string
+          timestamp?: string | null
+        }
+        Update: {
+          content?: string
+          id?: string
+          role?: string
+          session_id?: string
+          timestamp?: string | null
+        }
+        Relationships: [
+          {
+            foreignKeyName: "interview_messages_session_id_fkey"
+            columns: ["session_id"]
+            isOneToOne: false
+            referencedRelation: "interview_sessions"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
+      interview_sessions: {
+        Row: {
+          category: string
+          created_at: string | null
+          custom_topics: string[] | null
+          difficulty: string
+          duration: number | null
+          feedback: string | null
+          id: string
+          language: string | null
+          resume_context: string | null
+          role: string
+          score: number | null
+          status: string
+          updated_at: string | null
+          user_id: string
+        }
+        Insert: {
+          category: string
+          created_at?: string | null
+          custom_topics?: string[] | null
+          difficulty: string
+          duration?: number | null
+          feedback?: string | null
+          id?: string
+          language?: string | null
+          resume_context?: string | null
+          role: string
+          score?: number | null
+          status?: string
+          updated_at?: string | null
+          user_id: string
+        }
+        Update: {
+          category?: string
+          created_at?: string | null
+          custom_topics?: string[] | null
+          difficulty?: string
+          duration?: number | null
+          feedback?: string | null
+          id?: string
+          language?: string | null
+          resume_context?: string | null
+          role?: string
+          score?: number | null
+          status?: string
+          updated_at?: string | null
+          user_id?: string
+        }
+        Relationships: [
+          {
+            foreignKeyName: "interview_sessions_user_id_fkey"
+            columns: ["user_id"]
+            isOneToOne: false
+            referencedRelation: "profiles"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
+      profiles: {
+        Row: {
+          avatar_url: string | null
+          created_at: string | null
+          display_name: string | null
+          email: string | null
+          id: string
+          updated_at: string | null
+        }
+        Insert: {
+          avatar_url?: string | null
+          created_at?: string | null
+          display_name?: string | null
+          email?: string | null
+          id: string
+          updated_at?: string | null
+        }
+        Update: {
+          avatar_url?: string | null
+          created_at?: string | null
+          display_name?: string | null
+          email?: string | null
+          id?: string
+          updated_at?: string | null
+        }
+        Relationships: []
+      }
+      resumes: {
+        Row: {
+          analysis: Json | null
+          content: string
+          filename: string
+          id: string
+          uploaded_at: string | null
+          user_id: string
+        }
+        Insert: {
+          analysis?: Json | null
+          content: string
+          filename: string
+          id?: string
+          uploaded_at?: string | null
+          user_id: string
+        }
+        Update: {
+          analysis?: Json | null
+          content?: string
+          filename?: string
+          id?: string
+          uploaded_at?: string | null
+          user_id?: string
+        }
+        Relationships: [
+          {
+            foreignKeyName: "resumes_user_id_fkey"
+            columns: ["user_id"]
+            isOneToOne: false
+            referencedRelation: "profiles"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
+      user_challenges: {
+        Row: {
+          challenge_id: string
+          code: string | null
+          completed_at: string | null
+          created_at: string | null
+          id: string
+          language: string
+          status: string
+          time_spent: number | null
+          user_id: string
+        }
+        Insert: {
+          challenge_id: string
+          code?: string | null
+          completed_at?: string | null
+          created_at?: string | null
+          id?: string
+          language: string
+          status?: string
+          time_spent?: number | null
+          user_id: string
+        }
+        Update: {
+          challenge_id?: string
+          code?: string | null
+          completed_at?: string | null
+          created_at?: string | null
+          id?: string
+          language?: string
+          status?: string
+          time_spent?: number | null
+          user_id?: string
+        }
+        Relationships: [
+          {
+            foreignKeyName: "user_challenges_challenge_id_fkey"
+            columns: ["challenge_id"]
+            isOneToOne: false
+            referencedRelation: "daily_challenges"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "user_challenges_user_id_fkey"
+            columns: ["user_id"]
+            isOneToOne: false
+            referencedRelation: "profiles"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
+      user_stats: {
+        Row: {
+          completed_challenges: number | null
+          current_streak: number | null
+          last_completed_date: string | null
+          longest_streak: number | null
+          total_challenges: number | null
+          updated_at: string | null
+          user_id: string
+        }
+        Insert: {
+          completed_challenges?: number | null
+          current_streak?: number | null
+          last_completed_date?: string | null
+          longest_streak?: number | null
+          total_challenges?: number | null
+          updated_at?: string | null
+          user_id: string
+        }
+        Update: {
+          completed_challenges?: number | null
+          current_streak?: number | null
+          last_completed_date?: string | null
+          longest_streak?: number | null
+          total_challenges?: number | null
+          updated_at?: string | null
+          user_id?: string
+        }
+        Relationships: [
+          {
+            foreignKeyName: "user_stats_user_id_fkey"
+            columns: ["user_id"]
+            isOneToOne: true
+            referencedRelation: "profiles"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
     }
     Views: {
       [_ in never]: never
