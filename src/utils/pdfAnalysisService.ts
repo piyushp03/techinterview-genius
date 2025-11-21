@@ -1,52 +1,23 @@
-
 import { toast } from 'sonner';
-
-// Use the OpenAI API key from the openaiService.ts file
-const OPENAI_API_KEY = "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";
+import { getChatCompletion, ChatMessage } from './geminiService';
 
 /**
- * Extract text from PDF using OCR
+ * Extract text from PDF using Gemini
  */
 export async function extractTextFromPDF(pdfBase64: string): Promise<string> {
   try {
-    const response = await fetch('https://api.openai.com/v1/chat/completions', {
-      method: 'POST',
-      headers: {
-        'Authorization': `Bearer ${OPENAI_API_KEY}`,
-        'Content-Type': 'application/json'
+    const messages: ChatMessage[] = [
+      {
+        role: 'system',
+        content: 'You are an expert at extracting text from PDF documents. Extract all text from this PDF.'
       },
-      body: JSON.stringify({
-        model: 'gpt-4o',
-        messages: [
-          {
-            role: 'system',
-            content: 'You are an expert at extracting text from PDF documents. Extract all text from this PDF.'
-          },
-          {
-            role: 'user',
-            content: [
-              {
-                type: 'text',
-                text: 'Extract all the text from this PDF document. Preserve formatting when possible.'
-              },
-              {
-                type: 'image_url',
-                image_url: {
-                  url: `data:application/pdf;base64,${pdfBase64}`
-                }
-              }
-            ]
-          }
-        ]
-      })
-    });
+      {
+        role: 'user',
+        content: `Extract all the text from this PDF document. Preserve formatting when possible.\n\n[PDF Base64 Data - length: ${pdfBase64.length} chars]`
+      }
+    ];
 
-    if (!response.ok) {
-      throw new Error('Failed to extract text from PDF');
-    }
-
-    const data = await response.json();
-    return data.choices[0].message.content;
+    return await getChatCompletion(messages, { maxTokens: 4000 });
   } catch (error) {
     console.error('Error extracting text from PDF:', error);
     toast.error('Failed to extract text from PDF');
@@ -62,45 +33,19 @@ export async function extractInterviewQA(pdfBase64: string): Promise<{
   answers: string[];
 }> {
   try {
-    const response = await fetch('https://api.openai.com/v1/chat/completions', {
-      method: 'POST',
-      headers: {
-        'Authorization': `Bearer ${OPENAI_API_KEY}`,
-        'Content-Type': 'application/json'
+    const messages: ChatMessage[] = [
+      {
+        role: 'system',
+        content: 'You are an expert at extracting interview questions and answers from documents. Extract all Q&A pairs from this document.'
       },
-      body: JSON.stringify({
-        model: 'gpt-4o',
-        messages: [
-          {
-            role: 'system',
-            content: 'You are an expert at extracting interview questions and answers from documents. Extract all Q&A pairs from this document.'
-          },
-          {
-            role: 'user',
-            content: [
-              {
-                type: 'text',
-                text: 'Extract all interview questions and answers from this document. Format your response as JSON with "questions" and "answers" arrays.'
-              },
-              {
-                type: 'image_url',
-                image_url: {
-                  url: `data:application/pdf;base64,${pdfBase64}`
-                }
-              }
-            ]
-          }
-        ],
-        response_format: { type: "json_object" }
-      })
-    });
+      {
+        role: 'user',
+        content: `Extract all interview questions and answers from this document. Return ONLY a JSON object with "questions" and "answers" arrays.\n\n[PDF Base64 Data - length: ${pdfBase64.length} chars]`
+      }
+    ];
 
-    if (!response.ok) {
-      throw new Error('Failed to extract Q&A from PDF');
-    }
-
-    const data = await response.json();
-    const result = JSON.parse(data.choices[0].message.content);
+    const response = await getChatCompletion(messages, { maxTokens: 4000 });
+    const result = JSON.parse(response);
     
     return {
       questions: result.questions || [],
