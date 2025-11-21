@@ -56,38 +56,6 @@ export type Database = {
         }
         Relationships: []
       }
-      interview_analysis: {
-        Row: {
-          created_at: string
-          id: string
-          session_id: string
-          summary: Json | null
-          updated_at: string
-        }
-        Insert: {
-          created_at?: string
-          id?: string
-          session_id: string
-          summary?: Json | null
-          updated_at?: string
-        }
-        Update: {
-          created_at?: string
-          id?: string
-          session_id?: string
-          summary?: Json | null
-          updated_at?: string
-        }
-        Relationships: [
-          {
-            foreignKeyName: "interview_analysis_session_id_fkey"
-            columns: ["session_id"]
-            isOneToOne: true
-            referencedRelation: "interview_sessions"
-            referencedColumns: ["id"]
-          },
-        ]
-      }
       interview_messages: {
         Row: {
           content: string
@@ -127,14 +95,11 @@ export type Database = {
           custom_topics: string[] | null
           difficulty: string
           duration: number | null
-          end_time: string | null
           feedback: string | null
           id: string
-          is_completed: boolean | null
           language: string | null
           resume_context: string | null
           role: string
-          role_type: string | null
           score: number | null
           status: string
           updated_at: string | null
@@ -146,14 +111,11 @@ export type Database = {
           custom_topics?: string[] | null
           difficulty: string
           duration?: number | null
-          end_time?: string | null
           feedback?: string | null
           id?: string
-          is_completed?: boolean | null
           language?: string | null
           resume_context?: string | null
           role: string
-          role_type?: string | null
           score?: number | null
           status?: string
           updated_at?: string | null
@@ -165,14 +127,11 @@ export type Database = {
           custom_topics?: string[] | null
           difficulty?: string
           duration?: number | null
-          end_time?: string | null
           feedback?: string | null
           id?: string
-          is_completed?: boolean | null
           language?: string | null
           resume_context?: string | null
           role?: string
-          role_type?: string | null
           score?: number | null
           status?: string
           updated_at?: string | null
